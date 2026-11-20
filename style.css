@@ -57,6 +57,8 @@ label.lab { display: block; font-size: 12px; font-weight: 700; letter-spacing: .
 .counter.ok { background: var(--ok-bg); color: var(--ok); } .counter.warn { background: var(--warn-bg); color: var(--warn); } .counter.bad { background: var(--bad-bg); color: var(--bad); }
 .counter .t { font-weight: 700; margin-bottom: 6px; }
 .counter .s { margin-top: 6px; font-size: 14px; opacity: .9; }
+.defs { display: grid; grid-template-columns: 1fr 1fr; gap: 0 10px; }
+.defs .btn { min-height: 48px; }
 .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 12px; }
 .stat { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 10px 6px; text-align: center; }
 .stat b { display: block; font-size: 24px; }
@@ -110,4 +112,4 @@ th { background: var(--none-bg); }
   .card, .list { border-color: #999; }
   .pill, .counter { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 }
-@media (max-width: 420px) { .stats { grid-template-columns: repeat(2, 1fr); } .row2 { grid-template-columns: 1fr; } }
+@media (max-width: 420px) { .defs { grid-template-columns: 1fr; } .stats { grid-template-columns: repeat(2, 1fr); } .row2 { grid-template-columns: 1fr; } }

@@ -1,6 +1,6 @@
 {
-  "name": "Contrôle QR",
-  "short_name": "Contrôle QR",
+  "name": "Contrôle de l'éclairage de sécurité",
+  "short_name": "Éclairage sécu",
   "lang": "fr",
   "start_url": "./",
   "scope": "./",

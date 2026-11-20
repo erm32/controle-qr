@@ -1,12 +1,16 @@
-/* Contrôle QR : application hors ligne. Les fiches sont gardées sur le téléphone puis envoyées en lot à Apps Script. */
+/* Contrôle de l'éclairage de sécurité : application hors ligne. Les fiches sont gardées sur le téléphone puis envoyées en lot à Apps Script. */
 (function () {
   'use strict';
   var CFG = window.CQR || {};
   var API = CFG.API || '';
   var MONTH = CFG.MONTHLY_DAYS || 30, YEAR = CFG.ANNUAL_DAYS || 365;
   var KEY = 'cqr.v1';
-  var VERSION = 'v4 (étiquettes 19 × 16 mm)';
+  var VERSION = 'v5 (défauts et acquittements)';
   var OKR = 'OK', BAD = 'À remplacer';
+  var DEFECTS = ['À remplacer', 'Batterie à changer', 'Défaut alimentation', 'Défaut télécommande'];
+  var DEFKEY = { BAD: 'À remplacer', BATT: 'Batterie à changer', ALIM: 'Défaut alimentation', TEL: 'Défaut télécommande' };
+  var RESOL = { batterie: { from: 'Batterie à changer', label: 'Batterie changée', btn: 'Batterie changée' }, alim: { from: 'Défaut alimentation', label: 'Alimentation réparée', btn: 'Alim réparée' }, telecommande: { from: 'Défaut télécommande', label: 'Télécommande réparée', btn: 'Télécommande réparée' } };
+  function isDef(e) { return DEFECTS.indexOf(e.res) !== -1; }
 
   /* ---------- Outils ---------- */
   var $ = function (s) { return document.querySelector(s); };
@@ -42,30 +46,38 @@
   function findQr(d, qr) { for (var i = 0; i < d.emp.length; i++) if (d.emp[i].qr === qr) return d.emp[i]; return null; }
   function iso(ts) { return new Date(ts).toISOString(); }
 
+  function pushHist(e, ts, text) {
+    e.h = (e.h || []).concat([iso(ts).slice(0, 10) + ' | ' + text + ' | ' + (S.me ? S.me.nom : '')]).slice(-30);
+  }
   function applyLocal(d, op) {
     var e, i;
     if (op.type === 'controle') {
       e = findQr(d, op.qr); if (!e) return;
-      if (!e.dc || op.ts >= Date.parse(e.dc)) { e.dc = iso(op.ts); e.res = isN1() ? BAD : (/rempl/i.test(op.result) ? BAD : OKR); }
+      var rs0 = DEFECTS.indexOf(op.result) !== -1 ? op.result : (/rempl/i.test(op.result) ? BAD : (isN1() ? BAD : OKR));
+      if (rs0 !== OKR) pushHist(e, op.ts, rs0);
+      if (!e.dc || op.ts >= Date.parse(e.dc)) { e.dc = iso(op.ts); e.res = rs0; }
       if (op.comment && !isN1()) e.cq = op.comment;
+    } else if (op.type === 'resolution') {
+      e = findQr(d, op.qr); var rz = RESOL[op.kind];
+      if (e && rz && e.res === rz.from) { pushHist(e, op.ts, rz.label); e.dc = iso(op.ts); e.res = OKR; if (op.comment) e.cq = op.comment; }
     } else if (op.type === 'commentaire') {
       e = findQr(d, op.qr); if (e) e.cq = op.comment;
     } else if (op.type === 'creation') {
-      d.emp.push({ id: 'tmp-' + op.id, site: op.site, bat: op.bat, etage: op.etage, lieu: op.lieu, lc: op.lc || '', type: op.mat, qr: op.qr, dc: '', res: '', dr: '', cq: '', zone: op.zone || '' });
+      d.emp.push({ id: 'tmp-' + op.id, site: op.site, bat: op.bat, etage: op.etage, lieu: op.lieu, lc: op.lc || '', type: op.mat, qr: op.qr, dc: '', res: '', dr: '', cq: '', zone: op.zone || '', h: [] });
       d.qr[op.qr] = ['tmp-' + op.id, 'en service', ''];
     } else if (op.type === 'remplacement') {
       e = findQr(d, op.oldQr); if (!e) return;
       if (d.qr[op.oldQr]) { d.qr[op.oldQr][1] = 'remplacé'; d.qr[op.oldQr][2] = op.newQr; }
       d.qr[op.newQr] = [e.id, 'en service', ''];
-      e.qr = op.newQr; if (op.mat) e.type = op.mat; e.dr = e.dc = iso(op.ts); e.res = OKR; e.cq = '';
+      e.qr = op.newQr; if (op.mat) e.type = op.mat; e.dr = e.dc = iso(op.ts); e.res = OKR; e.cq = ''; e.h = [];
     } else if (op.type === 'modifier') {
       e = findQr(d, op.qr); if (!e) return;
       e.site = op.site || e.site; e.bat = op.bat; e.etage = op.etage; e.lieu = op.lieu; e.lc = op.lc || ''; e.type = op.mat; e.zone = op.zone || '';
-      if (op.reset) { e.dc = ''; e.res = ''; e.dr = ''; e.cq = ''; }
+      if (op.reset) { e.dc = ''; e.res = ''; e.dr = ''; e.cq = ''; e.h = []; }
     } else if (op.type === 'zone') {
       e = findQr(d, op.qr); if (e) e.zone = op.zone;
     } else if (op.type === 'zoneok') {
-      d.emp.forEach(function (x) { if (x.site === op.site && x.zone === op.zone && x.res !== BAD) { x.dc = iso(op.ts); x.res = OKR; } });
+      d.emp.forEach(function (x) { if (x.site === op.site && x.zone === op.zone && !isDef(x)) { x.dc = iso(op.ts); x.res = OKR; } });
     } else if (op.type === 'mensuel' || op.type === 'annuel') {
       for (i = 0; i < d.sites.length; i++) if (d.sites[i].site === op.site) {
         var s = d.sites[i], k = op.type === 'mensuel' ? ['dm', 'mpar', 'mcom'] : ['da', 'apar', 'acom'];
@@ -97,7 +109,7 @@
     return Object.keys(z).sort(function (a, b) { return a.localeCompare(b, 'fr'); });
   }
   function stateOf(e) {
-    if (e.res === BAD) return { c: 'bad', t: 'À remplacer' };
+    if (isDef(e)) return { c: 'bad', t: e.res };
     if (!e.dc) return { c: 'none', t: 'Jamais contrôlé' };
     var d = daysSince(e.dc);
     if (d !== null && d > YEAR) return { c: 'warn', t: 'OK · ancien' };
@@ -194,7 +206,7 @@
   }
 
   function renderHeader() {
-    var h = '<div class="brand">Contrôle QR</div>';
+    var h = '<div class="brand">Éclairage de sécurité</div>';
     if (S.me) {
       var n = S.outbox.length, b;
       if (syncing) b = ['pend', 'Synchronisation…'];
@@ -253,17 +265,17 @@
   function homeView() {
     var site = curSite(), so = siteObj(site), list = empOf(site);
     var nOk = 0, nBad = 0, nNone = 0;
-    list.forEach(function (e) { if (e.res === BAD) nBad++; else if (!e.dc) nNone++; else nOk++; });
+    list.forEach(function (e) { if (isDef(e)) nBad++; else if (!e.dc) nNone++; else nOk++; });
     var h = siteSelect() + '<h2 style="margin:4px 2px 10px">' + esc(site || 'Aucun site') + '</h2>';
     h += counter('Dernier contrôle mensuel', so.dm, MONTH, so.mpar, so.mcom);
     if (!isN1()) h += '<div style="height:10px"></div>' + counter('Dernier contrôle annuel', so.da, YEAR, so.apar, so.acom);
     h += '<div class="stats"><div class="stat"><b>' + list.length + '</b><span>QR</span></div><div class="stat"><b style="color:var(--ok)">' + nOk + '</b><span>OK</span></div>' +
-      '<div class="stat"><b style="color:var(--bad)">' + nBad + '</b><span>À remplacer</span></div><div class="stat"><b>' + nNone + '</b><span>Jamais contrôlés</span></div></div>';
+      '<div class="stat"><b style="color:var(--bad)">' + nBad + '</b><span>En défaut</span></div><div class="stat"><b>' + nNone + '</b><span>Jamais contrôlés</span></div></div>';
     if (isN1()) h += '<button class="btn" data-act="monthly" ' + (site ? '' : 'disabled') + '>Contrôle mensuel fait</button>';
     else h += '<button class="btn" data-act="annual" ' + (site ? '' : 'disabled') + '>Contrôle annuel terminé</button>';
-    var bad = list.filter(function (e) { return e.res === BAD; });
-    h += '<div class="group">À remplacer (' + bad.length + ')</div>';
-    h += bad.length ? '<div class="list">' + bad.map(rowHtml).join('') + '</div>' : '<div class="card muted">Aucun matériel à remplacer.</div>';
+    var bad = list.filter(function (e) { return isDef(e); });
+    h += '<div class="group">En défaut (' + bad.length + ')</div>';
+    h += bad.length ? '<div class="list">' + bad.map(rowHtml).join('') + '</div>' : '<div class="card muted">Aucun matériel en défaut.</div>';
     return h;
   }
 
@@ -284,7 +296,7 @@
   function dashView() {
     var rows = view().sites.map(function (so) {
       var l = empOf(so.site), bad = 0, none = 0;
-      l.forEach(function (e) { if (e.res === BAD) bad++; else if (!e.dc) none++; });
+      l.forEach(function (e) { if (isDef(e)) bad++; else if (!e.dc) none++; });
       return { so: so, n: l.length, bad: bad, none: none, ok: l.length - bad - none, late: Math.max(lateness(so.dm, MONTH), lateness(so.da, YEAR)) };
     }).sort(function (a, b) { return b.late - a.late; });
     var nm = rows.filter(function (r) { return lateness(r.so.dm, MONTH) > 0; }).length, na = rows.filter(function (r) { return lateness(r.so.da, YEAR) > 0; }).length;
@@ -294,7 +306,7 @@
       return '<button class="item" data-act="gosite" data-v="' + esc(r.so.site) + '" style="align-items:flex-start"><span class="l"><span class="n">' + esc(r.so.site) + '</span><br>' +
         '<span class="s">Mensuel : </span>' + ind(r.so.dm, MONTH) + (r.so.mpar ? ' <span class="s">' + esc(r.so.mpar) + '</span>' : '') + '<br>' +
         '<span class="s">Annuel : </span>' + ind(r.so.da, YEAR) + (r.so.apar ? ' <span class="s">' + esc(r.so.apar) + '</span>' : '') + '</span>' +
-        '<span style="text-align:right"><span class="pill ' + (r.bad ? 'bad' : 'ok') + '">' + r.bad + ' à remplacer</span><br><span class="s">' + r.n + ' QR · ' + r.none + ' non contrôlés</span></span></button>';
+        '<span style="text-align:right"><span class="pill ' + (r.bad ? 'bad' : 'ok') + '">' + r.bad + ' en défaut</span><br><span class="s">' + r.n + ' QR · ' + r.none + ' non contrôlés</span></span></button>';
     }).join('') + '</div>';
     return h;
   }
@@ -303,14 +315,14 @@
   function zonesView() {
     var site = curSite(), list = empOf(site), h = siteSelect();
     var z = {};
-    list.forEach(function (e) { var k = e.zone || ''; var o = z[k] || (z[k] = { n: 0, ok: 0, bad: 0, none: 0 }); o.n++; if (e.res === BAD) o.bad++; else if (!e.dc) o.none++; else o.ok++; });
+    list.forEach(function (e) { var k = e.zone || ''; var o = z[k] || (z[k] = { n: 0, ok: 0, bad: 0, none: 0 }); o.n++; if (isDef(e)) o.bad++; else if (!e.dc) o.none++; else o.ok++; });
     var names = Object.keys(z).filter(Boolean).sort(function (a, b) { return a.localeCompare(b, 'fr'); });
-    h += '<p class="muted" style="margin:2px 2px 10px">Valider « OK » pour toute une zone enregistre un contrôle sur chaque matériel de la zone. Ceux déjà signalés « à remplacer » ne sont pas modifiés.</p>';
+    h += '<p class="muted" style="margin:2px 2px 10px">Valider « OK » pour toute une zone enregistre un contrôle sur chaque matériel de la zone. Ceux déjà en défaut (à remplacer, batterie, alimentation, télécommande) gardent leur statut.</p>';
     if (!names.length) h += '<div class="card muted">Aucune zone définie pour ce site. Indiquez une zone en créant un matériel, ou depuis sa fiche (« Changer la zone »).</div>';
     names.forEach(function (n) {
       var o = z[n], todo = o.n - o.bad;
       h += '<div class="card"><div style="display:flex;justify-content:space-between;gap:8px;align-items:baseline"><h3>' + esc(n) + '</h3><span class="muted">' + plural(o.n, 'matériel', 'matériels') + '</span></div>' +
-        '<div style="margin-top:8px"><span class="pill ok">' + o.ok + ' OK</span> <span class="pill bad">' + o.bad + ' à remplacer</span> <span class="pill none">' + o.none + ' à contrôler</span></div>' +
+        '<div style="margin-top:8px"><span class="pill ok">' + o.ok + ' OK</span> <span class="pill bad">' + o.bad + ' en défaut</span> <span class="pill none">' + o.none + ' à contrôler</span></div>' +
         '<button class="btn" data-act="zoneok" data-v="' + esc(n) + '"' + (todo ? '' : ' disabled') + '>OK pour toute la zone</button></div>';
     });
     if (z['']) h += '<p class="muted" style="margin:12px 2px">' + plural(z[''].n, 'matériel sans zone', 'matériels sans zone') + ' (voir l’onglet Liste).</p>';
@@ -323,16 +335,16 @@
     var q = F.q.trim().toLowerCase();
     var items = list.filter(function (e) {
       if (F.zone === '__none' ? e.zone : (F.zone && e.zone !== F.zone)) return false;
-      if (F.etat === 'bad' && e.res !== BAD) return false;
-      if (F.etat === 'none' && (e.dc || e.res === BAD)) return false;
-      if (F.etat === 'ok' && (e.res === BAD || !e.dc)) return false;
+      if (F.etat === 'bad' && !isDef(e)) return false;
+      if (F.etat === 'none' && (e.dc || isDef(e))) return false;
+      if (F.etat === 'ok' && (isDef(e) || !e.dc)) return false;
       return !q || (e.lieu + ' ' + e.lc + ' ' + e.bat + ' ' + e.etage + ' ' + e.type + ' ' + e.qr + ' ' + e.zone + ' ' + e.cq).toLowerCase().indexOf(q) !== -1;
     }).sort(cmpEmp);
     var h = siteSelect() + '<div class="bar"><input class="in" id="fq" type="search" placeholder="Rechercher…" value="' + esc(F.q) + '">' +
       '<select class="in" data-act="fzone" aria-label="Zone"><option value="">Toutes les zones</option><option value="__none"' + (F.zone === '__none' ? ' selected' : '') + '>Sans zone</option>' +
       zs.map(function (z) { return '<option' + (F.zone === z ? ' selected' : '') + '>' + esc(z) + '</option>'; }).join('') + '</select>' +
       '<select class="in" data-act="fetat" aria-label="État"><option value="">Tous les états</option>' +
-      [['ok', 'OK'], ['bad', 'À remplacer'], ['none', 'Jamais contrôlés']].map(function (o) { return '<option value="' + o[0] + '"' + (F.etat === o[0] ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') + '</select></div>';
+      [['ok', 'OK'], ['bad', 'En défaut'], ['none', 'Jamais contrôlés']].map(function (o) { return '<option value="' + o[0] + '"' + (F.etat === o[0] ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') + '</select></div>';
     h += '<p class="muted" style="margin:0 2px 6px">' + plural(items.length, 'matériel', 'matériels') + '</p>';
     var cur = '';
     items.forEach(function (e) {
@@ -349,7 +361,10 @@
   }
 
   /* ---------- Rapport ---------- */
-  function etatText(e) { return e.res === BAD ? 'À remplacer' : (!e.dc ? 'Jamais contrôlé' : (daysSince(e.dc) > YEAR ? 'OK (ancien)' : 'OK')); }
+  function histText(e) {
+    return (e.h || []).map(function (x) { var p = x.split(' | '); return fmtDate(p[0]) + ' ' + (p[1] || '') + (p[2] ? ' (' + p[2] + ')' : ''); }).join(' ; ');
+  }
+  function etatText(e) { return isDef(e) ? e.res : (!e.dc ? 'Jamais contrôlé' : (daysSince(e.dc) > YEAR ? 'OK (ancien)' : 'OK')); }
 
   function reportView() {
     var all = S.site === '*', site = curSite(), h = siteSelect(true), now = new Date();
@@ -358,30 +373,35 @@
       (S.outbox.length ? ' · ' + plural(S.outbox.length, 'fiche en attente d’envoi', 'fiches en attente d’envoi') + ' (comprises)' : '');
     if (all) {
       var rows = view().sites.map(function (s) {
-        var l = empOf(s.site), bad = l.filter(function (e) { return e.res === BAD; }).length, none = l.filter(function (e) { return !e.dc && e.res !== BAD; }).length;
+        var l = empOf(s.site), bad = l.filter(function (e) { return isDef(e); }).length, none = l.filter(function (e) { return !e.dc && !isDef(e); }).length;
         var lr = l.map(function (e) { return e.dr; }).filter(Boolean).sort().pop();
         return '<tr><td>' + esc(s.site) + '</td><td>' + l.length + '</td><td>' + (l.length - bad - none) + '</td><td>' + bad + '</td><td>' + none + '</td><td>' + (fmtDate(s.dm) || '—') + '</td><td>' + (fmtDate(s.da) || '—') + '</td><td>' + (fmtDate(lr) || '—') + '</td></tr>';
       }).join('');
-      return h + head + '<div class="card rep"><h1>Tableau de bord : tous les sites</h1><div class="meta">' + meta + '</div><div class="tablewrap"><table><thead><tr><th>Site</th><th>QR</th><th>OK</th><th>À remplacer</th><th>Jamais contrôlés</th><th>Dernier mensuel</th><th>Dernier annuel</th><th>Dernier remplacement</th></tr></thead><tbody>' + rows + '</tbody></table></div></div>';
+      return h + head + '<div class="card rep"><h1>Tableau de bord : tous les sites</h1><div class="meta">' + meta + '</div><div class="tablewrap"><table><thead><tr><th>Site</th><th>QR</th><th>OK</th><th>En défaut</th><th>Jamais contrôlés</th><th>Dernier mensuel</th><th>Dernier annuel</th><th>Dernier remplacement</th></tr></thead><tbody>' + rows + '</tbody></table></div></div>';
     }
     var so = siteObj(site), l = empOf(site).sort(cmpEmp);
-    var bad = l.filter(function (e) { return e.res === BAD; }).length, none = l.filter(function (e) { return !e.dc && e.res !== BAD; }).length;
+    var bad = l.filter(function (e) { return isDef(e); }).length, none = l.filter(function (e) { return !e.dc && !isDef(e); }).length;
     var tr = l.map(function (e) {
       return '<tr><td>' + esc(e.bat) + '</td><td>' + esc(e.etage) + '</td><td>' + esc(e.zone) + '</td><td>' + esc(e.type) + '</td><td class="mono">' + esc(e.qr) + '</td><td>' +
-        (fmtDate(e.dc) || '—') + '</td><td>' + esc(etatText(e)) + '</td><td>' + (fmtDate(e.dr) || '—') + '</td><td>' + esc(e.cq) + '</td></tr>';
+        (fmtDate(e.dc) || '—') + '</td><td>' + esc(etatText(e)) + '</td><td>' + (fmtDate(e.dr) || '—') + '</td><td>' + esc(e.cq) + '</td><td>' + esc(histText(e)) + '</td></tr>';
     }).join('');
     return h + head + '<div class="card rep"><h1>' + esc(site) + '</h1><div class="meta">' + meta + '</div>' +
       '<p>Contrôle mensuel : <b>' + (fmtDate(so.dm) || 'jamais') + '</b>' + (so.mpar ? ' par ' + esc(so.mpar) : '') + ' · Contrôle annuel : <b>' + (fmtDate(so.da) || 'jamais') + '</b>' + (so.apar ? ' par ' + esc(so.apar) : '') +
-      '<br>' + plural(l.length, 'QR', 'QR') + ' · ' + (l.length - bad - none) + ' OK · <b>' + bad + ' à remplacer</b> · ' + none + ' jamais contrôlés</p>' +
-      '<div class="tablewrap"><table><thead><tr><th>Bâtiment</th><th>Étage</th><th>Zone</th><th>Type</th><th>QR</th><th>Dernier contrôle</th><th>État</th><th>Dernier remplacement</th><th>Commentaire</th></tr></thead><tbody>' + tr + '</tbody></table></div></div>';
+      '<br>' + plural(l.length, 'QR', 'QR') + ' · ' + (l.length - bad - none) + ' OK · <b>' + bad + ' en défaut</b> · ' + none + ' jamais contrôlés</p>' + defBreak(l) +
+      '<div class="tablewrap"><table><thead><tr><th>Bâtiment</th><th>Étage</th><th>Zone</th><th>Type</th><th>QR</th><th>Dernier contrôle</th><th>État</th><th>Dernier remplacement</th><th>Commentaire</th><th>Historique depuis le dernier remplacement</th></tr></thead><tbody>' + tr + '</tbody></table></div></div>';
   }
 
+  function defBreak(l) {
+    var c = {}; l.forEach(function (e) { if (isDef(e)) c[e.res] = (c[e.res] || 0) + 1; });
+    var k = Object.keys(c); if (!k.length) return '';
+    return '<p>' + k.map(function (x) { return esc(x) + ' : <b>' + c[x] + '</b>'; }).join(' · ') + '</p>';
+  }
   function exportCsv() {
     var site = curSite(), all = S.site === '*';
-    var cols = ['Site', 'Bâtiment', 'Étage', 'Zone', 'Type', 'QR', 'Dernier contrôle', 'État', 'Dernier remplacement', 'Commentaire QR', 'Commentaire de lieu'];
+    var cols = ['Site', 'Bâtiment', 'Étage', 'Zone', 'Type', 'QR', 'Dernier contrôle', 'État', 'Dernier remplacement', 'Commentaire QR', 'Commentaire de lieu', 'Historique depuis le dernier remplacement'];
     var lines = [cols.join(';')];
     (all ? view().emp : empOf(site)).slice().sort(function (a, b) { return a.site.localeCompare(b.site, 'fr') || cmpEmp(a, b); }).forEach(function (e) {
-      lines.push([e.site, e.bat, e.etage, e.zone, e.type, e.qr, fmtDate(e.dc), etatText(e), fmtDate(e.dr), e.cq, e.lc].map(function (c) { return '"' + String(c == null ? '' : c).replace(/"/g, '""') + '"'; }).join(';'));
+      lines.push([e.site, e.bat, e.etage, e.zone, e.type, e.qr, fmtDate(e.dc), etatText(e), fmtDate(e.dr), e.cq, e.lc, histText(e)].map(function (c) { return '"' + String(c == null ? '' : c).replace(/"/g, '""') + '"'; }).join(';'));
     });
     var blob = new Blob(['﻿' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' });
     var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'controle-' + (all ? 'tous-sites' : site.replace(/[^\w-]+/g, '_')) + '-' + new Date().toISOString().slice(0, 10) + '.csv';
@@ -482,7 +502,7 @@
     if (R) h += '<div class="banner">Remplacement de « ' + esc(R.label) + ' » : flashez le nouveau QR vierge. <button class="ghost" data-act="rcancel">Annuler</button></div>';
     h += '<div class="card"><label class="lab" style="margin-top:0" for="manual">Numéro du QR (si la caméra ne lit pas)</label>' +
       '<div style="display:flex;gap:8px"><input class="in" id="manual" placeholder="Q-0123" autocapitalize="characters" autocomplete="off" style="flex:1"><button class="btn sm" data-act="manual">Ouvrir</button></div></div>';
-    if (isN1()) h += '<p class="muted" style="margin:10px 2px">Flashez seulement les matériels en défaut : ils seront signalés « à remplacer » sur le tableau de bord du site.</p>';
+    if (isN1()) h += '<p class="muted" style="margin:10px 2px">Flashez seulement les matériels en défaut : ils seront signalés en défaut sur le tableau de bord du site.</p>';
     return h;
   }
 
@@ -511,7 +531,22 @@
     return '<div class="muted mono" style="font-size:13px">' + esc(e.qr) + '</div><h2 style="margin:2px 0 4px">' + esc(nom(e)) + '</h2>' +
       '<div class="muted">' + esc(e.site) + ' · ' + esc(e.bat) + ' · étage ' + esc(e.etage) + (e.zone ? ' · zone ' + esc(e.zone) + ' (' + plural(zoneCount(e.site, e.zone), 'appareil', 'appareils') + ')' : '') + '</div>' +
       '<div style="margin-top:6px">' + esc(e.type) + (e.lc ? ' · <span class="muted">' + esc(e.lc) + '</span>' : '') + '</div>' +
-      '<div style="margin-top:8px"><span class="pill ' + st.c + '">' + st.t + '</span> <span class="muted" style="font-size:14px">' + (e.dc ? 'contrôlé le ' + fmtDate(e.dc) : '') + (e.dr ? ' · remplacé le ' + fmtDate(e.dr) : '') + '</span></div>';
+      '<div style="margin-top:8px"><span class="pill ' + st.c + '">' + st.t + '</span> <span class="muted" style="font-size:14px">' + (e.dc ? 'contrôlé le ' + fmtDate(e.dc) : '') + (e.dr ? ' · remplacé le ' + fmtDate(e.dr) : '') + '</span></div>' + histHtml(e);
+  }
+  function resolBtns(e) {
+    var k = Object.keys(RESOL).filter(function (k) { return RESOL[k].from === e.res; })[0];
+    return k ? '<button class="btn ok" data-act="resol" data-v="' + k + '">✔ ' + RESOL[k].btn + '</button>' : '<p class="muted" style="margin:10px 0 0">Ce matériel est à remplacer : le statut reste jusqu’au remplacement (bouton ci-dessous).</p>';
+  }
+  function histHtml(e) {
+    if (!e.h || !e.h.length) return '';
+    return '<div class="group" style="padding:12px 0 4px">Historique depuis le dernier remplacement</div><ul style="margin:0;padding-left:18px;font-size:14px">' + e.h.map(function (x) {
+      var p = x.split(' | '); return '<li>' + esc(fmtDate(p[0])) + ' : ' + esc(p[1] || '') + (p[2] ? ' <span class="muted">(' + esc(p[2]) + ')</span>' : '') + '</li>';
+    }).join('') + '</ul>';
+  }
+  function defBtns(e) {
+    return Object.keys(DEFKEY).filter(function (k) { return DEFKEY[k] !== e.res; }).map(function (k) {
+      return '<button class="btn bad" data-act="ctl" data-v="' + k + '" style="font-size:16px">' + DEFKEY[k] + '</button>';
+    }).join('');
   }
   function zoneField(site, cur) {
     var zs = zonesOf(site);
@@ -530,13 +565,14 @@
     var d = view(), h = '', e = M.id ? d.byId[M.id] : null;
     if (M.k === 'ctl' && e) {
       h = empInfo(e) + '<label class="lab" for="m-com">Commentaire sur ce QR</label><textarea class="in" id="m-com" rows="2" maxlength="300" placeholder="Facultatif">' + esc(e.cq) + '</textarea>' +
-        '<div class="row2"><button class="btn ok" data-act="ctl" data-v="OK">OK</button><button class="btn bad" data-act="ctl" data-v="BAD">À remplacer</button></div>' +
+        (isDef(e) ? resolBtns(e) : '<button class="btn ok" data-act="ctl" data-v="OK">OK</button>') +
+        '<div class="group" style="padding:12px 0 0">Signaler un défaut</div><div class="defs">' + defBtns(e) + '</div>' +
         '<div class="row2"><button class="btn sec" data-act="repl">Remplacer le matériel</button><button class="btn sec" data-act="zonechg">Changer la zone</button></div>' +
         '<button class="btn sec" data-act="edit">Modifier la fiche / réemployer ce QR</button>' +
         '<button class="btn sec" data-act="close">Fermer</button>';
     } else if (M.k === 'defect' && e) {
-      h = empInfo(e) + (e.res === BAD ? '<p class="muted" style="margin:10px 0 0">Déjà signalé « à remplacer ».</p>' : '') +
-        '<button class="btn bad" data-act="ctl" data-v="BAD">Signaler : à remplacer</button><button class="btn sec" data-act="close">Fermer</button>';
+      h = empInfo(e) + (isDef(e) ? '<p class="muted" style="margin:10px 0 0">Déjà signalé : ' + esc(e.res) + '.</p>' : '') +
+        '<div class="group" style="padding:12px 0 0">Signaler un défaut</div><div class="defs">' + defBtns(e) + '</div><button class="btn sec" data-act="close">Fermer</button>';
     } else if (M.k === 'new') {
       var st = S.sticky, sl = sites(), site = sl.indexOf(st.site) !== -1 ? st.site : curSite();
       h = '<div class="muted mono" style="font-size:13px">' + esc(M.qr) + '</div><h2>QR non attribué : créer le matériel</h2>' +
@@ -573,9 +609,9 @@
         '<label class="lab" for="m-com">Commentaire</label><textarea class="in" id="m-com" rows="3" maxlength="300" placeholder="Facultatif"></textarea><div class="err" id="m-err" role="alert"></div>' +
         '<button class="btn" data-act="mago">Valider</button><button class="btn sec" data-act="close">Annuler</button>';
     } else if (M.k === 'zoneok') {
-      var l = empOf(M.site).filter(function (x) { return x.zone === M.zone; }), bad = l.filter(function (x) { return x.res === BAD; }).length, okn = l.length - bad;
+      var l = empOf(M.site).filter(function (x) { return x.zone === M.zone; }), bad = l.filter(function (x) { return isDef(x); }).length, okn = l.length - bad;
       h = '<h2>Valider la zone « ' + esc(M.zone) + ' »</h2><p style="font-size:18px">Voulez-vous valider les <b>' + plural(okn, 'appareil', 'appareils') + '</b> de la zone « OK » à la date d’aujourd’hui' +
-        (bad ? ', <b>sauf ' + plural(bad, 'appareil', 'appareils') + '</b> que vous venez de renseigner « à remplacer »' : '') + ' ?</p>' +
+        (bad ? ', <b>sauf ' + plural(bad, 'appareil', 'appareils') + '</b> en défaut (' + plural(bad, 'garde', 'gardent') + ' leur statut : à remplacer, batterie, alimentation ou télécommande)' : '') + ' ?</p>' +
         '<p class="muted" style="margin:0">La zone compte ' + plural(l.length, 'appareil', 'appareils') + ' au total.</p>' +
         '<label class="lab" for="m-com">Commentaire</label><input class="in" id="m-com" maxlength="200" placeholder="Facultatif">' +
         '<button class="btn ok" data-act="zogo"' + (okn ? '' : ' disabled') + '>Oui, valider ' + plural(okn, 'appareil', 'appareils') + '</button><button class="btn sec" data-act="close">Annuler</button>';
@@ -593,7 +629,7 @@
     el.hidden = false;
   }
   function opName(op) {
-    var n = { controle: 'Contrôle', commentaire: 'Commentaire', creation: 'Création', remplacement: 'Remplacement', zone: 'Changement de zone', modifier: 'Modification de fiche', zoneok: 'OK de zone', mensuel: 'Contrôle mensuel', annuel: 'Contrôle annuel' }[op.type] || op.type;
+    var n = { controle: 'Contrôle', commentaire: 'Commentaire', creation: 'Création', remplacement: 'Remplacement', zone: 'Changement de zone', resolution: 'Acquittement', modifier: 'Modification de fiche', zoneok: 'OK de zone', mensuel: 'Contrôle mensuel', annuel: 'Contrôle annuel' }[op.type] || op.type;
     return n + ' ' + (op.qr || op.oldQr || op.site || '') + ' (' + fmtDate(iso(op.ts)) + ')';
   }
 
@@ -618,10 +654,14 @@
     },
     close: function () { closeModal(); },
     ctl: function (el) {
-      var e = view().byId[M.id], bad = el.getAttribute('data-v') === 'BAD';
-      var op = { type: 'controle', qr: e.qr, result: bad ? BAD : OKR };
+      var e = view().byId[M.id], k = el.getAttribute('data-v'), res = k === 'OK' ? OKR : DEFKEY[k];
+      var op = { type: 'controle', qr: e.qr, result: res };
       if (!isN1()) op.comment = val('m-com');
-      var label = nom(e); closeModal(); enqueue(op); toast((bad ? 'À remplacer : ' : 'OK : ') + label);
+      var label = nom(e); closeModal(); enqueue(op); toast(res + ' : ' + label);
+    },
+    resol: function (el) {
+      var e = view().byId[M.id], k = el.getAttribute('data-v'), op = { type: 'resolution', qr: e.qr, kind: k, comment: val('m-com') };
+      var label = nom(e); closeModal(); enqueue(op); toast(RESOL[k].label + ' : ' + label);
     },
     zonesel: function (el) { var n = $('#m-zone-new'); if (n) { n.hidden = el.value !== '__new'; if (!n.hidden) n.focus(); } },
     newgo: function () {
