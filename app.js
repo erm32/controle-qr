@@ -5,7 +5,7 @@
   var API = CFG.API || '';
   var MONTH = CFG.MONTHLY_DAYS || 30, YEAR = CFG.ANNUAL_DAYS || 365;
   var KEY = 'cqr.v1';
-  var VERSION = 'v7 (écran zone, historique)';
+  var VERSION = 'v8 (saisie stable)';
   var OKR = 'OK', BAD = 'À remplacer';
   var DEFECTS = ['À remplacer', 'Batterie à changer', 'Défaut alimentation', 'Défaut télécommande'];
   var DEFKEY = { BAD: 'À remplacer', BATT: 'Batterie à changer', ALIM: 'Défaut alimentation', TEL: 'Défaut télécommande' };
@@ -148,7 +148,9 @@
         if (!x) keep.push(op);
         else if (!x.ok) S.rejected.push({ op: op, error: x.error, at: Date.now() });
       });
-      S.outbox = keep; S.server = r.data; S.me = r.me; S.last = r.now; VIEW = null; save(); render();
+      var before = sig();
+      S.outbox = keep; S.server = r.data; S.me = r.me; S.last = r.now; VIEW = null; save();
+      if (sig() !== before || !$('#view').innerHTML) render(); else renderHeader();   // pas de redessin inutile : un appui en cours ne se perd pas
       if (S.outbox.length) scheduleSync(500);
       else if (manual) toast('Synchronisé');
     }).catch(function () {
@@ -541,7 +543,9 @@
   }
 
   /* ---------- Fenêtres du bas ---------- */
-  function openModal(m) { M = m; renderModal(); }
+  var shownM = null;
+  function sig() { var d = view(); return JSON.stringify([d.sites, d.emp, d.qr, S.rejected.length]); }
+  function openModal(m) { M = m; renderModal(true); }
   function closeModal() { M = null; lastAt = Date.now(); renderModal(); }
 
   function empInfo(e) {
@@ -590,9 +594,11 @@
     return s.value === '__new' ? ($('#m-zone-new').value || '').trim() : s.value;
   }
 
-  function renderModal() {
+  function renderModal(force) {
     var el = $('#modal');
-    if (!M || !S.me) { el.hidden = true; el.innerHTML = ''; return; }
+    if (!M || !S.me) { shownM = null; el.hidden = true; el.innerHTML = ''; return; }
+    if (!force && shownM === M && !el.hidden) return;   // ne pas reconstruire une fenêtre ouverte (texte saisi, boutons)
+    shownM = M;
     var d = view(), h = '', e = M.id ? d.byId[M.id] : null;
     if (M.k === 'ctl' && e) {
       h = empInfo(e) + '<label class="lab" for="m-com">Commentaire sur ce QR</label><textarea class="in" id="m-com" rows="2" maxlength="300" placeholder="Facultatif">' + esc(e.cq) + '</textarea>' +
@@ -655,7 +661,7 @@
         '<button class="btn sec" data-act="sync">Envoyer maintenant</button><button class="btn bad" data-act="quitgo">Quitter quand même</button><button class="btn sec" data-act="close">Rester</button>';
     } else if (M.k === 'msg') {
       h = '<h2>' + esc(M.t) + '</h2><p>' + esc(M.m) + '</p><button class="btn" data-act="close">Fermer</button>';
-    } else { M = null; el.hidden = true; return; }
+    } else { M = null; shownM = null; el.hidden = true; return; }
     el.innerHTML = '<div class="sheet" role="dialog" aria-modal="true">' + h + '</div>';
     el.hidden = false;
   }
