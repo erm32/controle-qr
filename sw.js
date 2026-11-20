@@ -1,5 +1,5 @@
 // Service worker : permet d'ouvrir l'application sans réseau.
-var CACHE = 'cqr-v6';
+var CACHE = 'cqr-v7';
 var CDN = [
   'https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.min.js',
   'https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js'

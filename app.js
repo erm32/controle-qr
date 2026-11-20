@@ -5,7 +5,7 @@
   var API = CFG.API || '';
   var MONTH = CFG.MONTHLY_DAYS || 30, YEAR = CFG.ANNUAL_DAYS || 365;
   var KEY = 'cqr.v1';
-  var VERSION = 'v6 (zones, non-conformités, étiquettes)';
+  var VERSION = 'v7 (écran zone, historique)';
   var OKR = 'OK', BAD = 'À remplacer';
   var DEFECTS = ['À remplacer', 'Batterie à changer', 'Défaut alimentation', 'Défaut télécommande'];
   var DEFKEY = { BAD: 'À remplacer', BATT: 'Batterie à changer', ALIM: 'Défaut alimentation', TEL: 'Défaut télécommande' };
@@ -330,7 +330,7 @@
     return h;
   }
   function zoneDetail() {
-    var l = empOf(ZN.site).filter(function (e) { return e.zone === ZN.zone; }).sort(cmpEmp);
+    var l = empOf(ZN.site).filter(function (e) { return e.zone === ZN.zone; }).sort(function (a, b) { return a.qr.localeCompare(b.qr, 'fr', { numeric: true }); });
     var bad = l.filter(isDef).length, ok = l.filter(function (e) { return !isDef(e) && e.dc; }).length, none = l.length - bad - ok, todo = l.length - bad;
     var h = '<button class="ghost" data-act="zback">‹ Toutes les zones</button><h2 style="margin:0 2px 4px">Zone « ' + esc(ZN.zone) + ' »</h2>' +
       '<p class="muted" style="margin:0 2px 10px">' + esc(ZN.site) + ' · ' + plural(l.length, 'appareil', 'appareils') + '</p>' +
@@ -339,7 +339,10 @@
       '<button class="btn ok" data-act="zoneok" data-v="' + esc(ZN.zone) + '"' + (todo ? '' : ' disabled') + '>OK pour toute la zone' + (bad ? ' (sauf ' + bad + ' non conforme' + (bad > 1 ? 's' : '') + ')' : '') + '</button>' +
       '<div class="tiles">' + l.map(function (e) {
         var c = isDef(e) ? 'bad' : (e.dc ? 'ok' : 'none');
-        return '<button class="tile ' + c + '" data-act="emp" data-v="' + esc(e.id) + '"><b>' + esc(nom(e)) + '</b><span>' + esc(e.bat) + ' · ét. ' + esc(e.etage) + '</span><span class="mono">' + esc(e.qr) + '</span><span class="t">' + (isDef(e) ? esc(e.res) : (e.dc ? 'OK · ' + fmtDate(e.dc) : 'À contrôler')) + '</span></button>';
+        function ln(k, v) { return '<div class="ln"><span class="k">' + k + '</span><span class="v">' + (v ? esc(v) : '&nbsp;') + '</span></div>'; }
+        return '<button class="tile ' + c + '" data-act="emp" data-v="' + esc(e.id) + '"><b class="q">' + esc(e.qr) + '</b>' +
+          ln('État', isDef(e) ? e.res : (e.dc ? 'OK' : 'À contrôler')) + ln('Bâtiment', e.bat) + ln('Étage', e.etage) + ln('Type', e.type) +
+          ln('Commentaire de lieu', e.lc) + ln('Dernier contrôle', fmtDate(e.dc)) + ln('Dernier remplacement', fmtDate(e.dr)) + ln('Commentaire QR', e.cq) + '</button>';
       }).join('') + '</div>';
     return h;
   }
@@ -377,7 +380,7 @@
 
   /* ---------- Rapport ---------- */
   function histText(e) {
-    return (e.h || []).map(function (x) { var p = x.split(' | '); return fmtDate(p[0]) + ' ' + (p[1] || '') + (p[2] ? ' (' + p[2] + ')' : ''); }).join(' ; ');
+    return histVisible(e).map(function (x) { var p = x.split(' | '); return fmtDate(p[0]) + ' ' + (p[1] || '') + (p[2] ? ' (' + p[2] + ')' : ''); }).join(' ; ');
   }
   function etatText(e) { return isDef(e) ? e.res : (!e.dc ? 'Jamais contrôlé' : (daysSince(e.dc) > YEAR ? 'OK (ancien)' : 'OK')); }
 
@@ -552,9 +555,22 @@
     var k = Object.keys(RESOL).filter(function (k) { return RESOL[k].from === e.res; })[0];
     return k ? '<button class="btn ok" data-act="resol" data-v="' + k + '">✔ ' + RESOL[k].btn + '</button>' : '<p class="muted" style="margin:10px 0 0">Ce matériel est à remplacer : le statut reste jusqu’au remplacement (bouton ci-dessous).</p>';
   }
+  // Historique affiché : un défaut corrigé disparaît, seule la réparation reste.
+  function histVisible(e) {
+    var lst = (e.h || []).slice();
+    Object.keys(RESOL).forEach(function (k) {
+      var r = RESOL[k];
+      for (var i = 0; i < lst.length; i++) {
+        if ((lst[i].split(' | ')[1] || '') !== r.label) continue;
+        for (var j = i - 1; j >= 0; j--) if ((lst[j].split(' | ')[1] || '') === r.from) { lst.splice(j, 1); i--; break; }
+      }
+    });
+    return lst;
+  }
   function histHtml(e) {
-    if (!e.h || !e.h.length) return '';
-    return '<div class="group" style="padding:12px 0 4px">Historique depuis le dernier remplacement</div><ul style="margin:0;padding-left:18px;font-size:14px">' + e.h.map(function (x) {
+    var hv = histVisible(e);
+    if (!hv.length) return '';
+    return '<div class="group" style="padding:12px 0 4px">Historique depuis le dernier remplacement</div><ul style="margin:0;padding-left:18px;font-size:14px">' + hv.map(function (x) {
       var p = x.split(' | '); return '<li>' + esc(fmtDate(p[0])) + ' : ' + esc(p[1] || '') + (p[2] ? ' <span class="muted">(' + esc(p[2]) + ')</span>' : '') + '</li>';
     }).join('') + '</ul>';
   }

@@ -62,11 +62,15 @@ label.lab { display: block; font-size: 12px; font-weight: 700; letter-spacing: .
 .item.def { background: var(--bad-bg); }
 tr.def td { background: var(--bad-bg); }
 td.nc { color: var(--bad); font-weight: 700; }
-.tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 14px; }
-.tile { display: flex; flex-direction: column; gap: 2px; text-align: left; border-radius: 12px; padding: 10px 12px; border: 2px solid var(--line); background: var(--surface); cursor: pointer; min-width: 0; overflow-wrap: anywhere; }
-.tile b { font-size: 16px; } .tile span { font-size: 13px; color: var(--muted); } .tile .t { font-weight: 700; margin-top: 4px; }
-.tile.ok { background: var(--ok-bg); border-color: var(--ok); } .tile.ok .t { color: var(--ok); }
-.tile.bad { background: var(--bad-bg); border-color: var(--bad); } .tile.bad .t { color: var(--bad); }
+.tiles { display: grid; grid-template-columns: 1fr; gap: 10px; margin-top: 14px; }
+@media (min-width: 640px) { .tiles { grid-template-columns: 1fr 1fr; } }
+.tile { display: block; text-align: left; border-radius: 12px; padding: 10px 12px; border: 2px solid var(--line); background: var(--surface); cursor: pointer; min-width: 0; }
+.tile .q { display: block; font-family: var(--mono); font-size: 28px; font-weight: 800; line-height: 1.1; margin-bottom: 6px; }
+.tile .ln { display: flex; gap: 8px; font-size: 14px; min-height: 1.4em; border-top: 1px solid rgba(128,128,128,.25); padding: 2px 0; }
+.tile .k { flex: none; width: 44%; color: var(--muted); font-size: 13px; }
+.tile .v { min-width: 0; overflow-wrap: anywhere; font-weight: 600; }
+.tile.ok { background: var(--ok-bg); border-color: var(--ok); } 
+.tile.bad { background: var(--bad-bg); border-color: var(--bad); } 
 .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 12px; }
 .stat { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 10px 6px; text-align: center; }
 .stat b { display: block; font-size: 24px; }
