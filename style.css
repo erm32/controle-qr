@@ -90,19 +90,18 @@ th, td { border: 1px solid var(--line); padding: 5px 7px; text-align: left; vert
 th { background: var(--none-bg); }
 .rep h1 { font-size: 22px; } .rep .meta { color: var(--muted); font-size: 13px; margin: 4px 0 10px; }
 
-/* Étiquettes : 64 x 34 mm, 3 x 8 par page A4 */
+/* Étiquettes : 19 x 16 mm, QR 15 x 15 mm, numéro vertical à côté, 10 x 17 = 170 par page A4 */
 .labels-wrap { overflow-x: auto; background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 10px; }
-.labels { display: grid; grid-template-columns: repeat(3, 64mm); grid-auto-rows: 34mm; width: max-content; }
-.lbl { display: flex; align-items: center; gap: 3mm; padding: 0 3mm; border: 0; border-right: 0.25mm dashed #6b7780; border-bottom: 0.25mm dashed #6b7780; background: #fff; color: #000; overflow: hidden; break-inside: avoid; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-.lbl:nth-child(3n+1) { border-left: 0.25mm dashed #6b7780; }
-.lbl:nth-child(24n+1), .lbl:nth-child(24n+2), .lbl:nth-child(24n+3) { border-top: 0.25mm dashed #6b7780; }
-.lbl .qr { width: 26mm; height: 26mm; flex: none; }
+.labels { display: grid; grid-template-columns: repeat(10, 19mm); grid-auto-rows: 16mm; width: max-content; }
+.lbl { display: flex; align-items: center; gap: 0.5mm; padding: 0 0.5mm; border: 0; border-right: 0.25mm dashed #6b7780; border-bottom: 0.25mm dashed #6b7780; background: #fff; color: #000; overflow: hidden; break-inside: avoid; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+.lbl:nth-child(10n+1) { border-left: 0.25mm dashed #6b7780; }
+.lbl:nth-child(170n+1), .lbl:nth-child(170n+2), .lbl:nth-child(170n+3), .lbl:nth-child(170n+4), .lbl:nth-child(170n+5), .lbl:nth-child(170n+6), .lbl:nth-child(170n+7), .lbl:nth-child(170n+8), .lbl:nth-child(170n+9), .lbl:nth-child(170n+10) { border-top: 0.25mm dashed #6b7780; }
+.lbl .qr { width: 15mm; height: 15mm; flex: none; }
 .lbl .qr svg { width: 100%; height: 100%; display: block; }
-.lbl .tx { display: flex; flex-direction: column; gap: 1.5mm; min-width: 0; }
-.lbl .id { font-family: var(--mono); font-weight: 700; font-size: 4.6mm; line-height: 1; }
-.lbl .sub { font-size: 3mm; line-height: 1.1; overflow-wrap: anywhere; }
+.lbl .tx { flex: none; width: 2.6mm; height: 15mm; display: flex; align-items: center; justify-content: center; }
+.lbl .id { font-family: var(--mono); font-size: 2.2mm; line-height: 1; white-space: nowrap; writing-mode: vertical-rl; transform: rotate(180deg); }
 
-@page { size: A4; margin: 8mm; }
+@page { size: A4; margin: 6mm; }
 @media print {
   .noprint { display: none !important; }
   body { background: #fff; color: #000; }

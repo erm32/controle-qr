@@ -5,6 +5,7 @@
   var API = CFG.API || '';
   var MONTH = CFG.MONTHLY_DAYS || 30, YEAR = CFG.ANNUAL_DAYS || 365;
   var KEY = 'cqr.v1';
+  var VERSION = 'v4 (étiquettes 19 × 16 mm)';
   var OKR = 'OK', BAD = 'À remplacer';
 
   /* ---------- Outils ---------- */
@@ -57,6 +58,10 @@
       if (d.qr[op.oldQr]) { d.qr[op.oldQr][1] = 'remplacé'; d.qr[op.oldQr][2] = op.newQr; }
       d.qr[op.newQr] = [e.id, 'en service', ''];
       e.qr = op.newQr; if (op.mat) e.type = op.mat; e.dr = e.dc = iso(op.ts); e.res = OKR; e.cq = '';
+    } else if (op.type === 'modifier') {
+      e = findQr(d, op.qr); if (!e) return;
+      e.site = op.site || e.site; e.bat = op.bat; e.etage = op.etage; e.lieu = op.lieu; e.lc = op.lc || ''; e.type = op.mat; e.zone = op.zone || '';
+      if (op.reset) { e.dc = ''; e.res = ''; e.dr = ''; e.cq = ''; }
     } else if (op.type === 'zone') {
       e = findQr(d, op.qr); if (e) e.zone = op.zone;
     } else if (op.type === 'zoneok') {
@@ -86,6 +91,7 @@
     var z = {}; empOf(site).forEach(function (e) { if (e.zone) z[e.zone] = 1; });
     return Object.keys(z).sort(function (a, b) { return a.localeCompare(b, 'fr'); });
   }
+  function zoneCount(site, z) { return empOf(site).filter(function (e) { return e.zone === z; }).length; }
   function typesAll() {
     var z = {}; view().emp.forEach(function (e) { if (e.type) z[e.type] = 1; });
     return Object.keys(z).sort(function (a, b) { return a.localeCompare(b, 'fr'); });
@@ -157,7 +163,7 @@
   /* ---------- Rendu général ---------- */
   function tabsFor() {
     if (isN1()) return [['home', 'Accueil'], ['scan', 'Signaler un défaut']];
-    var t = [['scan', 'Scanner'], ['zones', 'Zones'], ['list', 'Liste'], ['home', 'Site'], ['report', 'Rapport']];
+    var t = [['scan', 'Scanner'], ['zones', 'Zones'], ['list', 'Liste'], ['home', 'Site'], ['dash', 'Tous les sites'], ['report', 'Rapport']];
     if (niv() === 'admin') t.push(['labels', 'Étiquettes']);
     return t;
   }
@@ -174,6 +180,7 @@
     h += banners();
     if (tab === 'scan') h += scanView();
     else if (tab === 'home') h += homeView();
+    else if (tab === 'dash') h += dashView();
     else if (tab === 'zones') h += zonesView();
     else if (tab === 'list') h += listView();
     else if (tab === 'report') h += reportView();
@@ -221,7 +228,7 @@
   }
 
   function renderLogin() {
-    $('#view').innerHTML = '<div class="card" style="margin-top:24px"><h1>Connexion</h1>' +
+    $('#view').innerHTML = '<div class="card" style="margin-top:24px"><h1>Connexion</h1><div class="muted" style="font-size:13px">Version ' + VERSION + '</div>' +
       '<p class="muted" style="margin:8px 0 0">Saisissez votre code personnel. Il reste mémorisé sur ce téléphone jusqu’à « Quitter » : l’application fonctionne ensuite sans réseau.</p>' +
       '<label class="lab" for="code">Code</label><input class="in" id="code" type="password" autocomplete="current-password" autocapitalize="off" autocorrect="off" spellcheck="false"' + (syncing ? ' disabled' : '') + '>' +
       (authMsg ? '<div class="err" role="alert">' + esc(authMsg) + '</div>' : '') +
@@ -261,9 +268,35 @@
   }
 
   function rowHtml(e) {
-    return '<button class="item" data-act="emp" data-v="' + esc(e.id) + '"><span class="l"><span class="n">' + esc(e.lieu) + '</span><br><span class="s">' +
+    return '<button class="item" data-act="emp" data-v="' + esc(e.id) + '"><span class="l"><span class="n">' + esc(nom(e)) + '</span><br><span class="s">' +
       esc(e.bat) + ' · étage ' + esc(e.etage) + (e.zone ? ' · zone ' + esc(e.zone) : '') + ' · ' + esc(e.type) + ' · <span class="mono">' + esc(e.qr) + '</span>' +
       (e.cq ? '<br>« ' + esc(e.cq) + ' »' : '') + '</span></span>' + pill(e) + '</button>';
+  }
+
+  /* ---------- Tableau de bord général ---------- */
+  function ind(iso, limit) {
+    var d = daysSince(iso);
+    if (d === null) return '<span class="pill bad">Jamais</span>';
+    var c = d > limit ? 'bad' : (d > limit * 0.8 ? 'warn' : 'ok');
+    return '<span class="pill ' + c + '">' + (d === 0 ? 'Aujourd’hui' : 'il y a ' + d + ' j') + '</span> <span class="muted" style="font-size:13px">' + fmtDate(iso) + '</span>';
+  }
+  function lateness(iso, limit) { var d = daysSince(iso); return d === null ? 1e9 : d - limit; }
+  function dashView() {
+    var rows = view().sites.map(function (so) {
+      var l = empOf(so.site), bad = 0, none = 0;
+      l.forEach(function (e) { if (e.res === BAD) bad++; else if (!e.dc) none++; });
+      return { so: so, n: l.length, bad: bad, none: none, ok: l.length - bad - none, late: Math.max(lateness(so.dm, MONTH), lateness(so.da, YEAR)) };
+    }).sort(function (a, b) { return b.late - a.late; });
+    var nm = rows.filter(function (r) { return lateness(r.so.dm, MONTH) > 0; }).length, na = rows.filter(function (r) { return lateness(r.so.da, YEAR) > 0; }).length;
+    var h = '<h2 style="margin:4px 2px 4px">Tous les sites</h2><p class="muted" style="margin:0 2px 12px">' + plural(rows.length, 'site', 'sites') + ' · ' + plural(nm, 'mensuel en retard', 'mensuels en retard') + ' · ' + plural(na, 'annuel en retard', 'annuels en retard') + '. Les plus en retard sont en premier.</p>';
+    if (!rows.length) return h + '<div class="card muted">Aucun site.</div>';
+    h += '<div class="list">' + rows.map(function (r) {
+      return '<button class="item" data-act="gosite" data-v="' + esc(r.so.site) + '" style="align-items:flex-start"><span class="l"><span class="n">' + esc(r.so.site) + '</span><br>' +
+        '<span class="s">Mensuel : </span>' + ind(r.so.dm, MONTH) + (r.so.mpar ? ' <span class="s">' + esc(r.so.mpar) + '</span>' : '') + '<br>' +
+        '<span class="s">Annuel : </span>' + ind(r.so.da, YEAR) + (r.so.apar ? ' <span class="s">' + esc(r.so.apar) + '</span>' : '') + '</span>' +
+        '<span style="text-align:right"><span class="pill ' + (r.bad ? 'bad' : 'ok') + '">' + r.bad + ' à remplacer</span><br><span class="s">' + r.n + ' QR · ' + r.none + ' non contrôlés</span></span></button>';
+    }).join('') + '</div>';
+    return h;
   }
 
   /* ---------- Zones ---------- */
@@ -293,7 +326,7 @@
       if (F.etat === 'bad' && e.res !== BAD) return false;
       if (F.etat === 'none' && (e.dc || e.res === BAD)) return false;
       if (F.etat === 'ok' && (e.res === BAD || !e.dc)) return false;
-      return !q || (e.lieu + ' ' + e.bat + ' ' + e.etage + ' ' + e.type + ' ' + e.qr + ' ' + e.zone + ' ' + e.cq).toLowerCase().indexOf(q) !== -1;
+      return !q || (e.lieu + ' ' + e.lc + ' ' + e.bat + ' ' + e.etage + ' ' + e.type + ' ' + e.qr + ' ' + e.zone + ' ' + e.cq).toLowerCase().indexOf(q) !== -1;
     }).sort(cmpEmp);
     var h = siteSelect() + '<div class="bar"><input class="in" id="fq" type="search" placeholder="Rechercher…" value="' + esc(F.q) + '">' +
       '<select class="in" data-act="fzone" aria-label="Zone"><option value="">Toutes les zones</option><option value="__none"' + (F.zone === '__none' ? ' selected' : '') + '>Sans zone</option>' +
@@ -310,6 +343,7 @@
     if (cur) h += '</div>'; else h += '<div class="card muted">Aucun matériel.</div>';
     return h;
   }
+  function nom(e) { return e.lieu || e.lc || e.type || e.qr; }
   function cmpEmp(a, b) {
     return (a.bat + '|' + a.etage + '|' + a.lieu).localeCompare(b.bat + '|' + b.etage + '|' + b.lieu, 'fr', { numeric: true });
   }
@@ -333,21 +367,21 @@
     var so = siteObj(site), l = empOf(site).sort(cmpEmp);
     var bad = l.filter(function (e) { return e.res === BAD; }).length, none = l.filter(function (e) { return !e.dc && e.res !== BAD; }).length;
     var tr = l.map(function (e) {
-      return '<tr><td>' + esc(e.bat) + '</td><td>' + esc(e.etage) + '</td><td>' + esc(e.lieu) + '</td><td>' + esc(e.zone) + '</td><td>' + esc(e.type) + '</td><td class="mono">' + esc(e.qr) + '</td><td>' +
+      return '<tr><td>' + esc(e.bat) + '</td><td>' + esc(e.etage) + '</td><td>' + esc(e.zone) + '</td><td>' + esc(e.type) + '</td><td class="mono">' + esc(e.qr) + '</td><td>' +
         (fmtDate(e.dc) || '—') + '</td><td>' + esc(etatText(e)) + '</td><td>' + (fmtDate(e.dr) || '—') + '</td><td>' + esc(e.cq) + '</td></tr>';
     }).join('');
     return h + head + '<div class="card rep"><h1>' + esc(site) + '</h1><div class="meta">' + meta + '</div>' +
       '<p>Contrôle mensuel : <b>' + (fmtDate(so.dm) || 'jamais') + '</b>' + (so.mpar ? ' par ' + esc(so.mpar) : '') + ' · Contrôle annuel : <b>' + (fmtDate(so.da) || 'jamais') + '</b>' + (so.apar ? ' par ' + esc(so.apar) : '') +
       '<br>' + plural(l.length, 'QR', 'QR') + ' · ' + (l.length - bad - none) + ' OK · <b>' + bad + ' à remplacer</b> · ' + none + ' jamais contrôlés</p>' +
-      '<div class="tablewrap"><table><thead><tr><th>Bâtiment</th><th>Étage</th><th>Lieu</th><th>Zone</th><th>Type</th><th>QR</th><th>Dernier contrôle</th><th>État</th><th>Dernier remplacement</th><th>Commentaire</th></tr></thead><tbody>' + tr + '</tbody></table></div></div>';
+      '<div class="tablewrap"><table><thead><tr><th>Bâtiment</th><th>Étage</th><th>Zone</th><th>Type</th><th>QR</th><th>Dernier contrôle</th><th>État</th><th>Dernier remplacement</th><th>Commentaire</th></tr></thead><tbody>' + tr + '</tbody></table></div></div>';
   }
 
   function exportCsv() {
     var site = curSite(), all = S.site === '*';
-    var cols = ['Site', 'Bâtiment', 'Étage', 'Lieu', 'Zone', 'Type', 'QR', 'Dernier contrôle', 'État', 'Dernier remplacement', 'Commentaire QR', 'Commentaire lieu'];
+    var cols = ['Site', 'Bâtiment', 'Étage', 'Zone', 'Type', 'QR', 'Dernier contrôle', 'État', 'Dernier remplacement', 'Commentaire QR', 'Commentaire de lieu'];
     var lines = [cols.join(';')];
     (all ? view().emp : empOf(site)).slice().sort(function (a, b) { return a.site.localeCompare(b.site, 'fr') || cmpEmp(a, b); }).forEach(function (e) {
-      lines.push([e.site, e.bat, e.etage, e.lieu, e.zone, e.type, e.qr, fmtDate(e.dc), etatText(e), fmtDate(e.dr), e.cq, e.lc].map(function (c) { return '"' + String(c == null ? '' : c).replace(/"/g, '""') + '"'; }).join(';'));
+      lines.push([e.site, e.bat, e.etage, e.zone, e.type, e.qr, fmtDate(e.dc), etatText(e), fmtDate(e.dr), e.cq, e.lc].map(function (c) { return '"' + String(c == null ? '' : c).replace(/"/g, '""') + '"'; }).join(';'));
     });
     var blob = new Blob(['﻿' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' });
     var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'controle-' + (all ? 'tous-sites' : site.replace(/[^\w-]+/g, '_')) + '-' + new Date().toISOString().slice(0, 10) + '.csv';
@@ -355,14 +389,14 @@
   }
 
   /* ---------- Étiquettes (QR vierges à imprimer) ---------- */
-  var LF = { from: 1, to: 24 };
+  var LF = { from: 1, to: 170 };
   function labelsView() {
     var from = Math.max(1, parseInt(LF.from, 10) || 1), to = Math.min(5000, Math.max(from, parseInt(LF.to, 10) || from));
-    var n = to - from + 1, pages = Math.ceil(n / 24);
-    return '<div class="noprint"><div class="card"><h3>QR vierges à imprimer</h3><p class="muted" style="margin:6px 0 0">Chaque QR porte un numéro. Il sera rattaché à un matériel la première fois qu’un niveau 2 le flashe.</p>' +
+    var n = to - from + 1, pages = Math.ceil(n / 170);
+    return '<div class="noprint"><div class="card"><h3>QR vierges à imprimer</h3><p class="muted" style="margin:4px 0 0;font-size:13px">Version de l’application : ' + VERSION + '</p><p class="muted" style="margin:6px 0 0">Chaque QR porte un numéro. Il sera rattaché à un matériel la première fois qu’un niveau 2 le flashe.</p>' +
       '<div class="row2"><div><label class="lab" for="lfrom">Du numéro</label><input class="in" id="lfrom" type="number" min="1" max="5000" inputmode="numeric" value="' + esc(LF.from) + '"></div>' +
       '<div><label class="lab" for="lto">Au numéro</label><input class="in" id="lto" type="number" min="1" max="5000" inputmode="numeric" value="' + esc(LF.to) + '"></div></div>' +
-      '<div style="display:flex;gap:10px;align-items:center;margin-top:12px;flex-wrap:wrap"><button class="btn sm" data-act="print">Imprimer</button><span class="muted">' + plural(n, 'étiquette', 'étiquettes') + ' · ' + plural(pages, 'page', 'pages') + ' A4 (3 × 8)</span></div>' +
+      '<div style="display:flex;gap:10px;align-items:center;margin-top:12px;flex-wrap:wrap"><button class="btn sm" data-act="print">Imprimer</button><span class="muted">' + plural(n, 'étiquette', 'étiquettes') + ' · ' + plural(pages, 'page', 'pages') + ' A4 (10 × 17)</span></div>' +
       '<p class="muted" style="font-size:14px;margin:10px 0 0">Impression : échelle 100 %, sans marges ni en-têtes, option « Graphiques d’arrière-plan » cochée.</p></div></div>' +
       '<div class="labels-wrap" style="margin-top:12px"><div class="labels" id="labels"></div></div>';
   }
@@ -371,14 +405,14 @@
     var qr = qrcode(0, 'M'); qr.addData(text); qr.make();
     var n = qr.getModuleCount(), d = '';
     for (var r = 0; r < n; r++) for (var c = 0; c < n; c++) if (qr.isDark(r, c)) d += 'M' + c + ' ' + r + 'h1v1h-1z';
-    return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="-2 -2 ' + (n + 4) + ' ' + (n + 4) + '" shape-rendering="crispEdges"><rect x="-2" y="-2" width="' + (n + 4) + '" height="' + (n + 4) + '" fill="#fff"/><path d="' + d + '" fill="#000"/></svg>';
+    return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 ' + (n + 2) + ' ' + (n + 2) + '" shape-rendering="crispEdges"><rect x="-1" y="-1" width="' + (n + 2) + '" height="' + (n + 2) + '" fill="#fff"/><path d="' + d + '" fill="#000"/></svg>';
   }
   function drawLabels() {
     var box = $('#labels'); if (!box) return;
     var from = Math.max(1, parseInt(LF.from, 10) || 1), to = Math.min(5000, Math.max(from, parseInt(LF.to, 10) || from)), h = '';
     for (var i = from; i <= to; i++) {
       var id = 'Q-' + ('0000' + i).slice(-4);
-      h += '<div class="lbl"><div class="qr">' + qrSvg(baseUrl() + '?q=' + id) + '</div><div class="tx"><div class="id">' + id + '</div>' + (CFG.LABEL_TEXT ? '<div class="sub">' + esc(CFG.LABEL_TEXT) + '</div>' : '') + '</div></div>';
+      h += '<div class="lbl"><div class="qr">' + qrSvg(baseUrl() + '?q=' + id) + '</div><div class="tx"><div class="id">' + id + '</div></div></div>';
     }
     box.innerHTML = h;
   }
@@ -474,15 +508,15 @@
 
   function empInfo(e) {
     var st = stateOf(e);
-    return '<div class="muted mono" style="font-size:13px">' + esc(e.qr) + '</div><h2 style="margin:2px 0 4px">' + esc(e.lieu) + '</h2>' +
-      '<div class="muted">' + esc(e.site) + ' · ' + esc(e.bat) + ' · étage ' + esc(e.etage) + (e.zone ? ' · zone ' + esc(e.zone) : '') + '</div>' +
+    return '<div class="muted mono" style="font-size:13px">' + esc(e.qr) + '</div><h2 style="margin:2px 0 4px">' + esc(nom(e)) + '</h2>' +
+      '<div class="muted">' + esc(e.site) + ' · ' + esc(e.bat) + ' · étage ' + esc(e.etage) + (e.zone ? ' · zone ' + esc(e.zone) + ' (' + plural(zoneCount(e.site, e.zone), 'appareil', 'appareils') + ')' : '') + '</div>' +
       '<div style="margin-top:6px">' + esc(e.type) + (e.lc ? ' · <span class="muted">' + esc(e.lc) + '</span>' : '') + '</div>' +
       '<div style="margin-top:8px"><span class="pill ' + st.c + '">' + st.t + '</span> <span class="muted" style="font-size:14px">' + (e.dc ? 'contrôlé le ' + fmtDate(e.dc) : '') + (e.dr ? ' · remplacé le ' + fmtDate(e.dr) : '') + '</span></div>';
   }
   function zoneField(site, cur) {
     var zs = zonesOf(site);
     return '<label class="lab" for="m-zone">Zone</label><select class="in" id="m-zone" data-act="zonesel"><option value="">— aucune —</option>' +
-      zs.map(function (z) { return '<option' + (z === cur ? ' selected' : '') + '>' + esc(z) + '</option>'; }).join('') + '<option value="__new">+ Nouvelle zone…</option></select>' +
+      zs.map(function (z) { return '<option value="' + esc(z) + '"' + (z === cur ? ' selected' : '') + '>' + esc(z) + ' (' + zoneCount(site, z) + ')</option>'; }).join('') + '<option value="__new">+ Nouvelle zone…</option></select>' +
       '<input class="in" id="m-zone-new" placeholder="Nom de la nouvelle zone" maxlength="60" style="margin-top:8px" hidden>';
   }
   function readZone() {
@@ -498,6 +532,7 @@
       h = empInfo(e) + '<label class="lab" for="m-com">Commentaire sur ce QR</label><textarea class="in" id="m-com" rows="2" maxlength="300" placeholder="Facultatif">' + esc(e.cq) + '</textarea>' +
         '<div class="row2"><button class="btn ok" data-act="ctl" data-v="OK">OK</button><button class="btn bad" data-act="ctl" data-v="BAD">À remplacer</button></div>' +
         '<div class="row2"><button class="btn sec" data-act="repl">Remplacer le matériel</button><button class="btn sec" data-act="zonechg">Changer la zone</button></div>' +
+        '<button class="btn sec" data-act="edit">Modifier la fiche / réemployer ce QR</button>' +
         '<button class="btn sec" data-act="close">Fermer</button>';
     } else if (M.k === 'defect' && e) {
       h = empInfo(e) + (e.res === BAD ? '<p class="muted" style="margin:10px 0 0">Déjà signalé « à remplacer ».</p>' : '') +
@@ -508,8 +543,7 @@
         '<label class="lab" for="m-site">Site</label><select class="in" id="m-site">' + sl.map(function (s) { return '<option' + (s === site ? ' selected' : '') + '>' + esc(s) + '</option>'; }).join('') + '</select>' +
         '<div class="row2"><div><label class="lab" for="m-bat">Bâtiment</label><input class="in" id="m-bat" maxlength="60" value="' + esc(st.bat || '') + '"></div>' +
         '<div><label class="lab" for="m-etage">Étage</label><input class="in" id="m-etage" maxlength="20" value="' + esc(st.etage || '') + '"></div></div>' +
-        '<label class="lab" for="m-lieu">Lieu</label><input class="in" id="m-lieu" maxlength="80" placeholder="Hall, couloir nord…">' +
-        '<label class="lab" for="m-lc">Commentaire de lieu</label><input class="in" id="m-lc" maxlength="300" placeholder="Facultatif">' +
+        '<label class="lab" for="m-lc">Commentaire de lieu</label><input class="in" id="m-lc" maxlength="300" placeholder="Ex. hall, couloir nord…">' +
         '<label class="lab" for="m-mat">Type de matériel</label><input class="in" id="m-mat" list="types" maxlength="60" value="' + esc(st.mat || '') + '"><datalist id="types">' + typesAll().map(function (t) { return '<option value="' + esc(t) + '">'; }).join('') + '</datalist>' +
         zoneField(site, st.zone || '') + '<div class="err" id="m-err" role="alert"></div>' +
         '<button class="btn" data-act="newgo">Créer</button><button class="btn sec" data-act="close">Annuler</button>';
@@ -517,10 +551,21 @@
       var oe = d.emp.filter(function (x) { return x.qr === R.oldQr; })[0] || {};
       h = '<div class="muted mono" style="font-size:13px">Nouveau QR : ' + esc(M.qr) + '</div><h2>Remplacer le matériel</h2><div class="muted">' + esc(R.label) + ' · ancien QR ' + esc(R.oldQr) + '</div>' +
         '<label class="lab" for="m-mat">Type du nouveau matériel</label><input class="in" id="m-mat" list="types" maxlength="60" value="' + esc(oe.type || '') + '"><datalist id="types">' + typesAll().map(function (t) { return '<option value="' + esc(t) + '">'; }).join('') + '</datalist>' +
-        '<p class="muted" style="margin:10px 0 0">Le lieu, le bâtiment, l’étage et la zone sont conservés. L’état passe à « OK » à la date du jour.</p>' +
+        '<p class="muted" style="margin:10px 0 0">Le bâtiment, l’étage, le commentaire de lieu et la zone sont conservés. L’état passe à « OK » à la date du jour.</p>' +
         '<button class="btn" data-act="replgo">Confirmer le remplacement</button><button class="btn sec" data-act="rcancel">Annuler</button>';
+    } else if (M.k === 'edit' && e) {
+      var sl2 = sites();
+      h = '<div class="muted mono" style="font-size:13px">' + esc(e.qr) + '</div><h2>Modifier la fiche</h2>' +
+        '<label class="lab" for="m-site">Site</label><select class="in" id="m-site">' + sl2.map(function (x) { return '<option' + (x === e.site ? ' selected' : '') + '>' + esc(x) + '</option>'; }).join('') + '</select>' +
+        '<div class="row2"><div><label class="lab" for="m-bat">Bâtiment</label><input class="in" id="m-bat" maxlength="60" value="' + esc(e.bat) + '"></div>' +
+        '<div><label class="lab" for="m-etage">Étage</label><input class="in" id="m-etage" maxlength="20" value="' + esc(e.etage) + '"></div></div>' +
+        '<label class="lab" for="m-lc">Commentaire de lieu</label><input class="in" id="m-lc" maxlength="300" value="' + esc(e.lc) + '">' +
+        '<label class="lab" for="m-mat">Type de matériel</label><input class="in" id="m-mat" list="types" maxlength="60" value="' + esc(e.type) + '"><datalist id="types">' + typesAll().map(function (t) { return '<option value="' + esc(t) + '">'; }).join('') + '</datalist>' +
+        zoneField(e.site, e.zone) +
+        '<label style="display:flex;gap:10px;align-items:center;margin-top:14px"><input type="checkbox" id="m-reset" style="width:22px;height:22px"> Réemploi : autre matériel ou autre endroit, remettre le contrôle à zéro</label>' +
+        '<div class="err" id="m-err" role="alert"></div><button class="btn" data-act="editgo">Enregistrer</button><button class="btn sec" data-act="close">Annuler</button>';
     } else if (M.k === 'zonechg' && e) {
-      h = '<h2>Zone de « ' + esc(e.lieu) + ' »</h2>' + zoneField(e.site, e.zone) + '<button class="btn" data-act="zonego">Enregistrer</button><button class="btn sec" data-act="close">Annuler</button>';
+      h = '<h2>Zone de « ' + esc(nom(e)) + ' »</h2>' + zoneField(e.site, e.zone) + '<button class="btn" data-act="zonego">Enregistrer</button><button class="btn sec" data-act="close">Annuler</button>';
     } else if (M.k === 'monthly' || M.k === 'annual') {
       var mo = M.k === 'monthly';
       h = '<h2>' + (mo ? 'Contrôle mensuel fait' : 'Contrôle annuel terminé') + '</h2><div class="muted">' + esc(M.site) + '</div>' +
@@ -528,11 +573,12 @@
         '<label class="lab" for="m-com">Commentaire</label><textarea class="in" id="m-com" rows="3" maxlength="300" placeholder="Facultatif"></textarea><div class="err" id="m-err" role="alert"></div>' +
         '<button class="btn" data-act="mago">Valider</button><button class="btn sec" data-act="close">Annuler</button>';
     } else if (M.k === 'zoneok') {
-      var l = empOf(M.site).filter(function (x) { return x.zone === M.zone; }), bad = l.filter(function (x) { return x.res === BAD; }).length;
-      h = '<h2>OK pour la zone « ' + esc(M.zone) + ' »</h2><p>' + plural(l.length - bad, 'matériel sera validé', 'matériels seront validés') + ' « OK » à la date d’aujourd’hui.' +
-        (bad ? '<br><span class="muted">' + plural(bad, 'matériel signalé « à remplacer » ne sera pas modifié', 'matériels signalés « à remplacer » ne seront pas modifiés') + '.</span>' : '') + '</p>' +
+      var l = empOf(M.site).filter(function (x) { return x.zone === M.zone; }), bad = l.filter(function (x) { return x.res === BAD; }).length, okn = l.length - bad;
+      h = '<h2>Valider la zone « ' + esc(M.zone) + ' »</h2><p style="font-size:18px">Voulez-vous valider les <b>' + plural(okn, 'appareil', 'appareils') + '</b> de la zone « OK » à la date d’aujourd’hui' +
+        (bad ? ', <b>sauf ' + plural(bad, 'appareil', 'appareils') + '</b> que vous venez de renseigner « à remplacer »' : '') + ' ?</p>' +
+        '<p class="muted" style="margin:0">La zone compte ' + plural(l.length, 'appareil', 'appareils') + ' au total.</p>' +
         '<label class="lab" for="m-com">Commentaire</label><input class="in" id="m-com" maxlength="200" placeholder="Facultatif">' +
-        '<button class="btn ok" data-act="zogo">Valider toute la zone</button><button class="btn sec" data-act="close">Annuler</button>';
+        '<button class="btn ok" data-act="zogo"' + (okn ? '' : ' disabled') + '>Oui, valider ' + plural(okn, 'appareil', 'appareils') + '</button><button class="btn sec" data-act="close">Annuler</button>';
     } else if (M.k === 'rej') {
       h = '<h2>Opérations refusées</h2><p class="muted">Le serveur a refusé ces opérations. Elles ne seront pas renvoyées.</p><div class="list">' + S.rejected.map(function (r) {
         return '<div class="item"><span class="l"><span class="n">' + esc(opName(r.op)) + '</span><br><span class="s">' + esc(r.error) + '</span></span></div>';
@@ -547,7 +593,7 @@
     el.hidden = false;
   }
   function opName(op) {
-    var n = { controle: 'Contrôle', commentaire: 'Commentaire', creation: 'Création', remplacement: 'Remplacement', zone: 'Changement de zone', zoneok: 'OK de zone', mensuel: 'Contrôle mensuel', annuel: 'Contrôle annuel' }[op.type] || op.type;
+    var n = { controle: 'Contrôle', commentaire: 'Commentaire', creation: 'Création', remplacement: 'Remplacement', zone: 'Changement de zone', modifier: 'Modification de fiche', zoneok: 'OK de zone', mensuel: 'Contrôle mensuel', annuel: 'Contrôle annuel' }[op.type] || op.type;
     return n + ' ' + (op.qr || op.oldQr || op.site || '') + ' (' + fmtDate(iso(op.ts)) + ')';
   }
 
@@ -560,6 +606,7 @@
     sync: function () { if (M && M.k === 'quit') M = null; sync(true); renderModal(); },
     quit: function () { if (S.outbox.length) openModal({ k: 'quit' }); else { forget(); render(); } },
     quitgo: function () { forget(); M = null; render(); },
+    gosite: function (el) { S.site = el.getAttribute('data-v'); save(); tab = 'home'; render(); },
     tab: function (el) { tab = el.getAttribute('data-v'); render(); },
     site: function (el) { S.site = el.value; save(); render(); },
     fzone: function (el) { F.zone = el.value; render(); },
@@ -574,26 +621,35 @@
       var e = view().byId[M.id], bad = el.getAttribute('data-v') === 'BAD';
       var op = { type: 'controle', qr: e.qr, result: bad ? BAD : OKR };
       if (!isN1()) op.comment = val('m-com');
-      var label = e.lieu; closeModal(); enqueue(op); toast((bad ? 'À remplacer : ' : 'OK : ') + label);
+      var label = nom(e); closeModal(); enqueue(op); toast((bad ? 'À remplacer : ' : 'OK : ') + label);
     },
     zonesel: function (el) { var n = $('#m-zone-new'); if (n) { n.hidden = el.value !== '__new'; if (!n.hidden) n.focus(); } },
     newgo: function () {
-      var site = val('m-site'), f = { bat: val('m-bat'), etage: val('m-etage'), lieu: val('m-lieu'), lc: val('m-lc'), mat: val('m-mat') }, zone = readZone();
-      if (!site || !f.bat || !f.etage || !f.lieu || !f.mat) return setErr('Site, bâtiment, étage, lieu et type sont obligatoires.');
+      var site = val('m-site'), f = { bat: val('m-bat'), etage: val('m-etage'), lc: val('m-lc'), mat: val('m-mat') }, zone = readZone();
+      if (!site || !f.bat || !f.etage || !f.mat) return setErr('Site, bâtiment, étage et type sont obligatoires.');
       if ($('#m-zone') && $('#m-zone').value === '__new' && !zone) return setErr('Saisissez le nom de la nouvelle zone.');
       S.sticky = { site: site, bat: f.bat, etage: f.etage, mat: f.mat, zone: zone }; S.site = site;
       var q = M.qr; closeModal();
-      enqueue({ type: 'creation', qr: q, site: site, bat: f.bat, etage: f.etage, lieu: f.lieu, lc: f.lc, mat: f.mat, zone: zone });
+      enqueue({ type: 'creation', qr: q, site: site, bat: f.bat, etage: f.etage, lieu: '', lc: f.lc, mat: f.mat, zone: zone });
       toast('Créé : ' + q);
     },
     repl: function () {
-      var e = view().byId[M.id]; R = { oldQr: e.qr, label: e.lieu }; M = null; lastAt = Date.now();
+      var e = view().byId[M.id]; R = { oldQr: e.qr, label: nom(e) }; M = null; lastAt = Date.now();
       tab = 'scan'; render(); camMsg('Remplacement : flashez le NOUVEAU QR code.');
     },
     rcancel: function () { R = null; M = null; lastAt = Date.now(); render(); },
     replgo: function () {
       var mat = val('m-mat'), nq = M.qr, old = R.oldQr; R = null; M = null; lastAt = Date.now();
       enqueue({ type: 'remplacement', oldQr: old, newQr: nq, mat: mat }); toast('Remplacé : ' + nq);
+    },
+    edit: function () { openModal({ k: 'edit', id: M.id }); },
+    editgo: function () {
+      var e = view().byId[M.id], f = { bat: val('m-bat'), etage: val('m-etage'), lc: val('m-lc'), mat: val('m-mat') }, zone = readZone();
+      if (!f.bat || !f.etage || !f.mat) return setErr('Bâtiment, étage et type sont obligatoires.');
+      var rs = $('#m-reset') && $('#m-reset').checked, qr = e.qr, st2 = val('m-site') || e.site;
+      closeModal();
+      enqueue({ type: 'modifier', qr: qr, site: st2, bat: f.bat, etage: f.etage, lieu: '', lc: f.lc, mat: f.mat, zone: zone, reset: !!rs });
+      toast('Fiche modifiée : ' + qr);
     },
     zonechg: function () { openModal({ k: 'zonechg', id: M.id }); },
     zonego: function () {
