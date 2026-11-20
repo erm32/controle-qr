@@ -5,7 +5,7 @@
   var API = CFG.API || '';
   var MONTH = CFG.MONTHLY_DAYS || 30, YEAR = CFG.ANNUAL_DAYS || 365;
   var KEY = 'cqr.v1';
-  var VERSION = 'v5 (défauts et acquittements)';
+  var VERSION = 'v6 (zones, non-conformités, étiquettes)';
   var OKR = 'OK', BAD = 'À remplacer';
   var DEFECTS = ['À remplacer', 'Batterie à changer', 'Défaut alimentation', 'Défaut télécommande'];
   var DEFKEY = { BAD: 'À remplacer', BATT: 'Batterie à changer', ALIM: 'Défaut alimentation', TEL: 'Défaut télécommande' };
@@ -280,7 +280,7 @@
   }
 
   function rowHtml(e) {
-    return '<button class="item" data-act="emp" data-v="' + esc(e.id) + '"><span class="l"><span class="n">' + esc(nom(e)) + '</span><br><span class="s">' +
+    return '<button class="item' + (isDef(e) ? ' def' : '') + '" data-act="emp" data-v="' + esc(e.id) + '"><span class="l"><span class="n">' + esc(nom(e)) + '</span><br><span class="s">' +
       esc(e.bat) + ' · étage ' + esc(e.etage) + (e.zone ? ' · zone ' + esc(e.zone) : '') + ' · ' + esc(e.type) + ' · <span class="mono">' + esc(e.qr) + '</span>' +
       (e.cq ? '<br>« ' + esc(e.cq) + ' »' : '') + '</span></span>' + pill(e) + '</button>';
   }
@@ -312,20 +312,35 @@
   }
 
   /* ---------- Zones ---------- */
+  var ZN = null;
   function zonesView() {
+    if (ZN) return zoneDetail();
     var site = curSite(), list = empOf(site), h = siteSelect();
     var z = {};
     list.forEach(function (e) { var k = e.zone || ''; var o = z[k] || (z[k] = { n: 0, ok: 0, bad: 0, none: 0 }); o.n++; if (isDef(e)) o.bad++; else if (!e.dc) o.none++; else o.ok++; });
     var names = Object.keys(z).filter(Boolean).sort(function (a, b) { return a.localeCompare(b, 'fr'); });
-    h += '<p class="muted" style="margin:2px 2px 10px">Valider « OK » pour toute une zone enregistre un contrôle sur chaque matériel de la zone. Ceux déjà en défaut (à remplacer, batterie, alimentation, télécommande) gardent leur statut.</p>';
+    h += '<p class="muted" style="margin:2px 2px 10px">Touchez une zone pour voir tous ses appareils (vert = OK, rouge = non conforme) et la valider d’un coup.</p>';
     if (!names.length) h += '<div class="card muted">Aucune zone définie pour ce site. Indiquez une zone en créant un matériel, ou depuis sa fiche (« Changer la zone »).</div>';
-    names.forEach(function (n) {
-      var o = z[n], todo = o.n - o.bad;
-      h += '<div class="card"><div style="display:flex;justify-content:space-between;gap:8px;align-items:baseline"><h3>' + esc(n) + '</h3><span class="muted">' + plural(o.n, 'matériel', 'matériels') + '</span></div>' +
-        '<div style="margin-top:8px"><span class="pill ok">' + o.ok + ' OK</span> <span class="pill bad">' + o.bad + ' en défaut</span> <span class="pill none">' + o.none + ' à contrôler</span></div>' +
-        '<button class="btn" data-act="zoneok" data-v="' + esc(n) + '"' + (todo ? '' : ' disabled') + '>OK pour toute la zone</button></div>';
-    });
+    h += '<div class="list">' + names.map(function (n) {
+      var o = z[n];
+      return '<button class="item' + (o.bad ? ' def' : '') + '" data-act="zopen" data-v="' + esc(n) + '"><span class="l"><span class="n">' + esc(n) + '</span><br><span class="s">' + plural(o.n, 'appareil', 'appareils') + '</span></span>' +
+        '<span style="text-align:right"><span class="pill ok">' + o.ok + ' OK</span> <span class="pill bad">' + o.bad + ' en défaut</span> <span class="pill none">' + o.none + ' à contrôler</span></span></button>';
+    }).join('') + '</div>';
     if (z['']) h += '<p class="muted" style="margin:12px 2px">' + plural(z[''].n, 'matériel sans zone', 'matériels sans zone') + ' (voir l’onglet Liste).</p>';
+    return h;
+  }
+  function zoneDetail() {
+    var l = empOf(ZN.site).filter(function (e) { return e.zone === ZN.zone; }).sort(cmpEmp);
+    var bad = l.filter(isDef).length, ok = l.filter(function (e) { return !isDef(e) && e.dc; }).length, none = l.length - bad - ok, todo = l.length - bad;
+    var h = '<button class="ghost" data-act="zback">‹ Toutes les zones</button><h2 style="margin:0 2px 4px">Zone « ' + esc(ZN.zone) + ' »</h2>' +
+      '<p class="muted" style="margin:0 2px 10px">' + esc(ZN.site) + ' · ' + plural(l.length, 'appareil', 'appareils') + '</p>' +
+      '<div class="stats"><div class="stat"><b>' + l.length + '</b><span>Appareils</span></div><div class="stat"><b style="color:var(--ok)">' + ok + '</b><span>OK</span></div>' +
+      '<div class="stat"><b style="color:var(--bad)">' + bad + '</b><span>Non conformes</span></div><div class="stat"><b>' + none + '</b><span>À contrôler</span></div></div>' +
+      '<button class="btn ok" data-act="zoneok" data-v="' + esc(ZN.zone) + '"' + (todo ? '' : ' disabled') + '>OK pour toute la zone' + (bad ? ' (sauf ' + bad + ' non conforme' + (bad > 1 ? 's' : '') + ')' : '') + '</button>' +
+      '<div class="tiles">' + l.map(function (e) {
+        var c = isDef(e) ? 'bad' : (e.dc ? 'ok' : 'none');
+        return '<button class="tile ' + c + '" data-act="emp" data-v="' + esc(e.id) + '"><b>' + esc(nom(e)) + '</b><span>' + esc(e.bat) + ' · ét. ' + esc(e.etage) + '</span><span class="mono">' + esc(e.qr) + '</span><span class="t">' + (isDef(e) ? esc(e.res) : (e.dc ? 'OK · ' + fmtDate(e.dc) : 'À contrôler')) + '</span></button>';
+      }).join('') + '</div>';
     return h;
   }
 
@@ -382,13 +397,13 @@
     var so = siteObj(site), l = empOf(site).sort(cmpEmp);
     var bad = l.filter(function (e) { return isDef(e); }).length, none = l.filter(function (e) { return !e.dc && !isDef(e); }).length;
     var tr = l.map(function (e) {
-      return '<tr><td>' + esc(e.bat) + '</td><td>' + esc(e.etage) + '</td><td>' + esc(e.zone) + '</td><td>' + esc(e.type) + '</td><td class="mono">' + esc(e.qr) + '</td><td>' +
-        (fmtDate(e.dc) || '—') + '</td><td>' + esc(etatText(e)) + '</td><td>' + (fmtDate(e.dr) || '—') + '</td><td>' + esc(e.cq) + '</td><td>' + esc(histText(e)) + '</td></tr>';
+      return '<tr' + (isDef(e) ? ' class="def"' : '') + '><td>' + esc(e.bat) + '</td><td>' + esc(e.etage) + '</td><td>' + esc(e.zone) + '</td><td>' + esc(e.type) + '</td><td class="mono">' + esc(e.qr) + '</td><td>' +
+        (fmtDate(e.dc) || '—') + '</td><td>' + esc(etatText(e)) + '</td><td class="nc">' + (isDef(e) ? esc(e.res) : '') + '</td><td>' + (fmtDate(e.dr) || '—') + '</td><td>' + esc(e.cq) + '</td><td>' + esc(histText(e)) + '</td></tr>';
     }).join('');
     return h + head + '<div class="card rep"><h1>' + esc(site) + '</h1><div class="meta">' + meta + '</div>' +
       '<p>Contrôle mensuel : <b>' + (fmtDate(so.dm) || 'jamais') + '</b>' + (so.mpar ? ' par ' + esc(so.mpar) : '') + ' · Contrôle annuel : <b>' + (fmtDate(so.da) || 'jamais') + '</b>' + (so.apar ? ' par ' + esc(so.apar) : '') +
       '<br>' + plural(l.length, 'QR', 'QR') + ' · ' + (l.length - bad - none) + ' OK · <b>' + bad + ' en défaut</b> · ' + none + ' jamais contrôlés</p>' + defBreak(l) +
-      '<div class="tablewrap"><table><thead><tr><th>Bâtiment</th><th>Étage</th><th>Zone</th><th>Type</th><th>QR</th><th>Dernier contrôle</th><th>État</th><th>Dernier remplacement</th><th>Commentaire</th><th>Historique depuis le dernier remplacement</th></tr></thead><tbody>' + tr + '</tbody></table></div></div>';
+      '<div class="tablewrap"><table><thead><tr><th>Bâtiment</th><th>Étage</th><th>Zone</th><th>Type</th><th>QR</th><th>Dernier contrôle</th><th>État</th><th>Non-conformité</th><th>Dernier remplacement</th><th>Commentaire</th><th>Historique depuis le dernier remplacement</th></tr></thead><tbody>' + tr + '</tbody></table></div></div>';
   }
 
   function defBreak(l) {
@@ -398,10 +413,10 @@
   }
   function exportCsv() {
     var site = curSite(), all = S.site === '*';
-    var cols = ['Site', 'Bâtiment', 'Étage', 'Zone', 'Type', 'QR', 'Dernier contrôle', 'État', 'Dernier remplacement', 'Commentaire QR', 'Commentaire de lieu', 'Historique depuis le dernier remplacement'];
+    var cols = ['Site', 'Bâtiment', 'Étage', 'Zone', 'Type', 'QR', 'Dernier contrôle', 'État', 'Non-conformité', 'Dernier remplacement', 'Commentaire QR', 'Commentaire de lieu', 'Historique depuis le dernier remplacement'];
     var lines = [cols.join(';')];
     (all ? view().emp : empOf(site)).slice().sort(function (a, b) { return a.site.localeCompare(b.site, 'fr') || cmpEmp(a, b); }).forEach(function (e) {
-      lines.push([e.site, e.bat, e.etage, e.zone, e.type, e.qr, fmtDate(e.dc), etatText(e), fmtDate(e.dr), e.cq, e.lc, histText(e)].map(function (c) { return '"' + String(c == null ? '' : c).replace(/"/g, '""') + '"'; }).join(';'));
+      lines.push([e.site, e.bat, e.etage, e.zone, e.type, e.qr, fmtDate(e.dc), etatText(e), isDef(e) ? e.res : '', fmtDate(e.dr), e.cq, e.lc, histText(e)].map(function (c) { return '"' + String(c == null ? '' : c).replace(/"/g, '""') + '"'; }).join(';'));
     });
     var blob = new Blob(['﻿' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' });
     var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'controle-' + (all ? 'tous-sites' : site.replace(/[^\w-]+/g, '_')) + '-' + new Date().toISOString().slice(0, 10) + '.csv';
@@ -409,14 +424,14 @@
   }
 
   /* ---------- Étiquettes (QR vierges à imprimer) ---------- */
-  var LF = { from: 1, to: 170 };
+  var LF = { from: 1, to: 153 };
   function labelsView() {
     var from = Math.max(1, parseInt(LF.from, 10) || 1), to = Math.min(5000, Math.max(from, parseInt(LF.to, 10) || from));
-    var n = to - from + 1, pages = Math.ceil(n / 170);
+    var n = to - from + 1, pages = Math.ceil(n / 153);
     return '<div class="noprint"><div class="card"><h3>QR vierges à imprimer</h3><p class="muted" style="margin:4px 0 0;font-size:13px">Version de l’application : ' + VERSION + '</p><p class="muted" style="margin:6px 0 0">Chaque QR porte un numéro. Il sera rattaché à un matériel la première fois qu’un niveau 2 le flashe.</p>' +
       '<div class="row2"><div><label class="lab" for="lfrom">Du numéro</label><input class="in" id="lfrom" type="number" min="1" max="5000" inputmode="numeric" value="' + esc(LF.from) + '"></div>' +
       '<div><label class="lab" for="lto">Au numéro</label><input class="in" id="lto" type="number" min="1" max="5000" inputmode="numeric" value="' + esc(LF.to) + '"></div></div>' +
-      '<div style="display:flex;gap:10px;align-items:center;margin-top:12px;flex-wrap:wrap"><button class="btn sm" data-act="print">Imprimer</button><span class="muted">' + plural(n, 'étiquette', 'étiquettes') + ' · ' + plural(pages, 'page', 'pages') + ' A4 (10 × 17)</span></div>' +
+      '<div style="display:flex;gap:10px;align-items:center;margin-top:12px;flex-wrap:wrap"><button class="btn sm" data-act="print">Imprimer</button><span class="muted">' + plural(n, 'étiquette', 'étiquettes') + ' · ' + plural(pages, 'page', 'pages') + ' A4 (9 × 17)</span></div>' +
       '<p class="muted" style="font-size:14px;margin:10px 0 0">Impression : échelle 100 %, sans marges ni en-têtes, option « Graphiques d’arrière-plan » cochée.</p></div></div>' +
       '<div class="labels-wrap" style="margin-top:12px"><div class="labels" id="labels"></div></div>';
   }
@@ -642,9 +657,11 @@
     sync: function () { if (M && M.k === 'quit') M = null; sync(true); renderModal(); },
     quit: function () { if (S.outbox.length) openModal({ k: 'quit' }); else { forget(); render(); } },
     quitgo: function () { forget(); M = null; render(); },
+    zopen: function (el) { ZN = { site: curSite(), zone: el.getAttribute('data-v') }; render(); },
+    zback: function () { ZN = null; render(); },
     gosite: function (el) { S.site = el.getAttribute('data-v'); save(); tab = 'home'; render(); },
-    tab: function (el) { tab = el.getAttribute('data-v'); render(); },
-    site: function (el) { S.site = el.value; save(); render(); },
+    tab: function (el) { tab = el.getAttribute('data-v'); ZN = null; render(); },
+    site: function (el) { S.site = el.value; ZN = null; save(); render(); },
     fzone: function (el) { F.zone = el.value; render(); },
     fetat: function (el) { F.etat = el.value; render(); },
     emp: function (el) { openModal({ k: isN1() ? 'defect' : 'ctl', id: el.getAttribute('data-v') }); },

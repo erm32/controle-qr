@@ -59,6 +59,14 @@ label.lab { display: block; font-size: 12px; font-weight: 700; letter-spacing: .
 .counter .s { margin-top: 6px; font-size: 14px; opacity: .9; }
 .defs { display: grid; grid-template-columns: 1fr 1fr; gap: 0 10px; }
 .defs .btn { min-height: 48px; }
+.item.def { background: var(--bad-bg); }
+tr.def td { background: var(--bad-bg); }
+td.nc { color: var(--bad); font-weight: 700; }
+.tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 14px; }
+.tile { display: flex; flex-direction: column; gap: 2px; text-align: left; border-radius: 12px; padding: 10px 12px; border: 2px solid var(--line); background: var(--surface); cursor: pointer; min-width: 0; overflow-wrap: anywhere; }
+.tile b { font-size: 16px; } .tile span { font-size: 13px; color: var(--muted); } .tile .t { font-weight: 700; margin-top: 4px; }
+.tile.ok { background: var(--ok-bg); border-color: var(--ok); } .tile.ok .t { color: var(--ok); }
+.tile.bad { background: var(--bad-bg); border-color: var(--bad); } .tile.bad .t { color: var(--bad); }
 .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 12px; }
 .stat { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 10px 6px; text-align: center; }
 .stat b { display: block; font-size: 24px; }
@@ -92,16 +100,16 @@ th, td { border: 1px solid var(--line); padding: 5px 7px; text-align: left; vert
 th { background: var(--none-bg); }
 .rep h1 { font-size: 22px; } .rep .meta { color: var(--muted); font-size: 13px; margin: 4px 0 10px; }
 
-/* Étiquettes : 19 x 16 mm, QR 15 x 15 mm, numéro vertical à côté, 10 x 17 = 170 par page A4 */
+/* Étiquettes : 21 x 16 mm, QR 15 x 15 mm, numéro vertical gras, 9 x 17 = 153 par page A4 */
 .labels-wrap { overflow-x: auto; background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 10px; }
-.labels { display: grid; grid-template-columns: repeat(10, 19mm); grid-auto-rows: 16mm; width: max-content; }
+.labels { display: grid; grid-template-columns: repeat(9, 21mm); grid-auto-rows: 16mm; width: max-content; }
 .lbl { display: flex; align-items: center; gap: 0.5mm; padding: 0 0.5mm; border: 0; border-right: 0.25mm dashed #6b7780; border-bottom: 0.25mm dashed #6b7780; background: #fff; color: #000; overflow: hidden; break-inside: avoid; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-.lbl:nth-child(10n+1) { border-left: 0.25mm dashed #6b7780; }
-.lbl:nth-child(170n+1), .lbl:nth-child(170n+2), .lbl:nth-child(170n+3), .lbl:nth-child(170n+4), .lbl:nth-child(170n+5), .lbl:nth-child(170n+6), .lbl:nth-child(170n+7), .lbl:nth-child(170n+8), .lbl:nth-child(170n+9), .lbl:nth-child(170n+10) { border-top: 0.25mm dashed #6b7780; }
+.lbl:nth-child(9n+1) { border-left: 0.25mm dashed #6b7780; }
+.lbl:nth-child(153n+1), .lbl:nth-child(153n+2), .lbl:nth-child(153n+3), .lbl:nth-child(153n+4), .lbl:nth-child(153n+5), .lbl:nth-child(153n+6), .lbl:nth-child(153n+7), .lbl:nth-child(153n+8), .lbl:nth-child(153n+9) { border-top: 0.25mm dashed #6b7780; }
 .lbl .qr { width: 15mm; height: 15mm; flex: none; }
 .lbl .qr svg { width: 100%; height: 100%; display: block; }
-.lbl .tx { flex: none; width: 2.6mm; height: 15mm; display: flex; align-items: center; justify-content: center; }
-.lbl .id { font-family: var(--mono); font-size: 2.2mm; line-height: 1; white-space: nowrap; writing-mode: vertical-rl; transform: rotate(180deg); }
+.lbl .tx { flex: none; width: 4.4mm; height: 15mm; display: flex; align-items: center; justify-content: center; }
+.lbl .id { font-family: var(--mono); font-weight: 800; font-size: 3.6mm; line-height: 1; white-space: nowrap; writing-mode: vertical-rl; transform: rotate(180deg); }
 
 @page { size: A4; margin: 6mm; }
 @media print {
@@ -110,6 +118,7 @@ th { background: var(--none-bg); }
   #app { max-width: none; padding: 0; }
   .labels-wrap { border: 0; padding: 0; overflow: visible; }
   .card, .list { border-color: #999; }
+  tr.def td, .item.def, .tile { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   .pill, .counter { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 }
 @media (max-width: 420px) { .defs { grid-template-columns: 1fr; } .stats { grid-template-columns: repeat(2, 1fr); } .row2 { grid-template-columns: 1fr; } }
