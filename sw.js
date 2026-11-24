@@ -1,9 +1,6 @@
 // Service worker : permet d'ouvrir l'application sans réseau.
-var CACHE = 'cqr-v8';
-var CDN = [
-  'https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.min.js',
-  'https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js'
-];
+var CACHE = 'cqr-v9';
+var CDN = [];
 var SHELL = ['./', 'index.html', 'app.js', 'style.css', 'config.js', 'manifest.webmanifest', 'icon.svg', 'icon-192.png', 'icon-512.png'];
 
 self.addEventListener('install', function (e) {
