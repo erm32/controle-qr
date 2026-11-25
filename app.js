@@ -5,7 +5,7 @@
   var API = CFG.API || '';
   var MONTH = CFG.MONTHLY_DAYS || 30, YEAR = CFG.ANNUAL_DAYS || 365;
   var KEY = 'cqr.v1', SCHEMA = 2;
-  var VERSION = 'v15 (interface niveau 1)';
+  var VERSION = 'v16 (niveau 1 : zones)';
   var OKR = 'OK', BAD = 'À remplacer';
   var DEFECTS = ['À remplacer', 'Batterie à changer', 'Défaut alimentation', 'Défaut télécommande'];
   var DEFKEY = { BAD: 'À remplacer', BATT: 'Batterie à changer', ALIM: 'Défaut alimentation', TEL: 'Défaut télécommande' };
@@ -197,7 +197,7 @@
 
   /* ---------- Rendu général ---------- */
   function tabsFor() {
-    if (isN1()) return [['home', 'Accueil']];
+    if (isN1()) return [['home', 'Accueil'], ['zones', 'Zones']];
     return [['list', 'Liste'], ['zones', 'Zones'], ['home', 'Site'], ['dash', 'Tous les sites'], ['report', 'Rapport']];
   }
 
@@ -357,7 +357,7 @@
       var o = tally(bats[b]), nz = {}; bats[b].forEach(function (e) { if (e.zone) nz[e.zone] = 1; });
       return '<button class="item' + (o.bad ? ' def' : '') + '" data-act="bopen" data-v="' + esc(b) + '"><span class="l"><span class="n">Bâtiment ' + esc(b) + '</span><br><span class="s">' + plural(Object.keys(nz).length, 'zone', 'zones') + ' · ' + plural(o.n, 'bloc', 'blocs') + '</span></span><span style="text-align:right">' + pills(o) + '</span></button>';
     }).join('') +
-    '<button class="item" data-act="ztel"><span class="l"><span class="n">Télécommandes</span><br><span class="s">' + plural(telsOf(site).length, 'télécommande', 'télécommandes') + '</span></span><span class="muted">›</span></button></div>';
+    (isN1() ? '' : '<button class="item" data-act="ztel"><span class="l"><span class="n">Télécommandes</span><br><span class="s">' + plural(telsOf(site).length, 'télécommande', 'télécommandes') + '</span></span><span class="muted">›</span></button>') + '</div>';
     return h;
   }
   function zoneDetail() {
@@ -367,11 +367,11 @@
       '<p class="muted" style="margin:0 2px 10px">' + esc(ZN.site) + ' · ' + plural(l.length, 'bloc', 'blocs') + '</p>' +
       '<div class="stats"><div class="stat"><b>' + l.length + '</b><span>Blocs</span></div><div class="stat"><b style="color:var(--ok)">' + ok + '</b><span>OK</span></div>' +
       '<div class="stat"><b style="color:var(--bad)">' + bad + '</b><span>Non conformes</span></div><div class="stat"><b>' + none + '</b><span>À contrôler</span></div></div>' +
-      '<button class="btn ok" data-act="zoneok" data-v="' + esc(ZN.zone) + '"' + (todo ? '' : ' disabled') + '>OK pour toute la zone' + (bad ? ' (sauf ' + bad + ' non conforme' + (bad > 1 ? 's' : '') + ')' : '') + '</button>' +
+      (isN1() ? '<p class="muted" style="margin:0 2px 8px">Touchez ⚠ ou le numéro d’un appareil pour le signaler en défaut.</p>' : '<button class="btn ok" data-act="zoneok" data-v="' + esc(ZN.zone) + '"' + (todo ? '' : ' disabled') + '>OK pour toute la zone' + (bad ? ' (sauf ' + bad + ' non conforme' + (bad > 1 ? 's' : '') + ')' : '') + '</button>') +
       '<div class="tiles">' + l.map(function (e) {
         var c = isDef(e) ? 'bad' : (e.dc ? 'ok' : 'none');
         return '<div class="tile ' + c + '" role="button" tabindex="0" data-act="emp" data-v="' + esc(e.id) + '" title="' + esc(isDef(e) ? e.res : (e.dc ? 'OK' : 'À contrôler')) + '"><div class="tn"><b class="q">' + esc(nom(e)) + '</b>' + (isDef(e) ? '<small class="td">' + esc(e.res) + '</small>' : '') + '</div>' +
-          '<div class="tact"><button class="btn bad" data-act="maint" data-v="' + esc(e.id) + '" aria-label="Maintenance à faire">⚠</button><button class="btn ok" data-act="ack" data-v="' + esc(e.id) + '" aria-label="' + (isDef(e) ? 'Acquitter' : 'Contrôle OK') + '">✔</button></div></div>';
+          '<div class="tact"><button class="btn bad" data-act="maint" data-v="' + esc(e.id) + '" aria-label="' + (isN1() ? 'Signaler en défaut' : 'Maintenance à faire') + '">⚠</button>' + (isN1() ? '' : '<button class="btn ok" data-act="ack" data-v="' + esc(e.id) + '" aria-label="' + (isDef(e) ? 'Acquitter' : 'Contrôle OK') + '">✔</button>') + '</div></div>';
       }).join('') + '</div>';
     return h;
   }
@@ -606,6 +606,10 @@
       else h += '<p style="font-size:18px">Confirmez-vous un <b>nouveau contrôle OK</b> à la date d’aujourd’hui (' + fmtDate(new Date().toISOString()) + ') ?</p>' + (e.dc ? '<p class="muted" style="margin:0">Dernier contrôle : ' + fmtDate(e.dc) + '.</p>' : '') +
         '<label class="lab" for="m-com">Commentaire</label><input class="in" id="m-com" maxlength="300" placeholder="Facultatif" value="' + esc(e.cq) + '">' +
         '<button class="btn ok" data-act="ctl" data-v="OK">Oui, contrôle OK</button><button class="btn sec" data-act="close">Annuler</button>';
+    } else if (M.k === 'sigone' && e) {
+      h = '<h2 class="rfbig">' + esc(nom(e)) + '</h2><div class="muted">' + esc(e.bat) + ' · étage ' + esc(e.etage) + (e.zone ? ' · zone ' + esc(e.zone) : '') + '</div>' +
+        (isDef(e) ? '<p style="font-size:18px">Cet appareil est déjà signalé en défaut.</p><button class="btn sec" data-act="close">Fermer</button>' :
+        '<p style="font-size:18px">Signaler cet appareil en défaut ?</p><button class="btn bad" data-act="sigok" data-v="' + esc(e.id) + '">⚠ Oui, signaler en défaut</button><button class="btn sec" data-act="close">Annuler</button>');
     } else if (M.k === 'defect' && e) {
       h = empInfo(e) + (isDef(e) ? '<p class="muted" style="margin:10px 0 0">Déjà signalé : ' + esc(e.res) + '.</p>' : '') +
         '<div class="group" style="padding:12px 0 0">Signaler un défaut</div><div class="defs">' + defBtns(e) + '</div><button class="btn sec" data-act="close">Fermer</button>';
@@ -635,7 +639,7 @@
     } else if (M.k === 'monthly' || M.k === 'annual') {
       var mo = M.k === 'monthly';
       h = '<h2>' + (mo ? 'Contrôle mensuel fait' : 'Contrôle annuel terminé') + '</h2><div class="muted">' + esc(M.site) + '</div>' +
-        '<label class="lab" for="m-nom">Votre nom</label><input class="in" id="m-nom" maxlength="60" autocomplete="name" value="' + esc(mo ? (S.nom || '') : (S.nom || S.me.nom)) + '">' +
+        '<label class="lab" for="m-nom">Votre nom</label><input class="in" id="m-nom" maxlength="60" autocomplete="name" value="' + esc(S.nom || S.me.nom) + '">' +
         (mo ? '' : '<label class="lab" for="m-date">Date du contrôle</label><input class="in" type="date" id="m-date" value="' + today() + '" max="' + today() + '">') +
         '<label class="lab" for="m-com">Commentaire</label><textarea class="in" id="m-com" rows="3" maxlength="300" placeholder="Facultatif"></textarea><div class="err" id="m-err" role="alert"></div>' +
         '<button class="btn" data-act="mago">Valider</button><button class="btn sec" data-act="close">Annuler</button>';
@@ -667,7 +671,7 @@
 
   /* ---------- Actions ---------- */
   function val(id) { var e = $('#' + id); return e ? e.value.trim() : ''; }
-  function setErr(t) { var e = $('#m-err'); if (e) e.textContent = t; }
+  function setErr(t) { var e = $('#m-err'); if (e) e.textContent = t; if (t) toast(t); }
 
   // Valide le formulaire de fiche ; renvoie null (erreur affichée) ou les champs
   function readFiche(exceptId) {
@@ -712,9 +716,10 @@
     site: function (el) { S.site = el.value; ZN = null; save(); render(); },
     fzone: function (el) { F.zone = el.value; render(); },
     fetat: function (el) { F.etat = el.value; render(); },
-    emp: function (el) { openModal({ k: isN1() ? 'defect' : 'ctl', id: el.getAttribute('data-v') }); },
+    emp: function (el) { openModal({ k: isN1() ? 'sigone' : 'ctl', id: el.getAttribute('data-v') }); },
+    sigok: function (el) { var e = view().byId[el.getAttribute('data-v')]; if (!e) return closeModal(); var label = nom(e); closeModal(); enqueue({ type: 'controle', eid: e.id, result: BAD }); toast('Signalé en défaut : ' + label); },
     close: function () { closeModal(); },
-    maint: function (el) { openModal({ k: 'maint', id: el.getAttribute('data-v') }); },
+    maint: function (el) { openModal({ k: isN1() ? 'sigone' : 'maint', id: el.getAttribute('data-v') }); },
     ack: function (el) { openModal({ k: 'ack', id: el.getAttribute('data-v') }); },
     ctl: function (el) {
       var e = view().byId[M.id], k = el.getAttribute('data-v'), res = k === 'OK' ? OKR : DEFKEY[k];
