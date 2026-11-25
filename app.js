@@ -5,7 +5,7 @@
   var API = CFG.API || '';
   var MONTH = CFG.MONTHLY_DAYS || 30, YEAR = CFG.ANNUAL_DAYS || 365;
   var KEY = 'cqr.v1', SCHEMA = 2;
-  var VERSION = 'v10 (boutons maintenance dans les zones)';
+  var VERSION = 'v11 (zones compactes)';
   var OKR = 'OK', BAD = 'À remplacer';
   var DEFECTS = ['À remplacer', 'Batterie à changer', 'Défaut alimentation', 'Défaut télécommande'];
   var DEFKEY = { BAD: 'À remplacer', BATT: 'Batterie à changer', ALIM: 'Défaut alimentation', TEL: 'Défaut télécommande' };
@@ -353,11 +353,8 @@
       '<button class="btn ok" data-act="zoneok" data-v="' + esc(ZN.zone) + '"' + (todo ? '' : ' disabled') + '>OK pour toute la zone' + (bad ? ' (sauf ' + bad + ' non conforme' + (bad > 1 ? 's' : '') + ')' : '') + '</button>' +
       '<div class="tiles">' + l.map(function (e) {
         var c = isDef(e) ? 'bad' : (e.dc ? 'ok' : 'none');
-        function ln(k, v) { return '<div class="ln"><span class="k">' + k + '</span><span class="v">' + (v ? esc(v) : '&nbsp;') + '</span></div>'; }
-        return '<div class="tile ' + c + '" role="button" tabindex="0" data-act="emp" data-v="' + esc(e.id) + '"><b class="q">' + esc(nom(e)) + '</b>' +
-          ln('État', isDef(e) ? e.res : (e.dc ? 'OK' : 'À contrôler')) + ln('Bâtiment', e.bat) + ln('Étage', e.etage) + ln('Type', e.type) + ln('Télécommande', e.tel) +
-          ln('Commentaire de lieu', e.lc) + ln('Dernier contrôle', fmtDate(e.dc)) + ln('Dernier remplacement', fmtDate(e.dr)) + ln('Commentaire', e.cq) +
-          '<div class="tact"><button class="btn bad" data-act="maint" data-v="' + esc(e.id) + '">⚠ Maintenance à faire</button><button class="btn ok" data-act="ack" data-v="' + esc(e.id) + '">' + (isDef(e) ? '✔ Acquitter' : '✔ Contrôle OK') + '</button></div></div>';
+        return '<div class="tile ' + c + '" role="button" tabindex="0" data-act="emp" data-v="' + esc(e.id) + '" title="' + esc(isDef(e) ? e.res : (e.dc ? 'OK' : 'À contrôler')) + '"><b class="q">' + esc(nom(e)) + '</b>' +
+          '<div class="tact"><button class="btn bad" data-act="maint" data-v="' + esc(e.id) + '" aria-label="Maintenance à faire">⚠</button><button class="btn ok" data-act="ack" data-v="' + esc(e.id) + '" aria-label="' + (isDef(e) ? 'Acquitter' : 'Contrôle OK') + '">✔</button></div></div>';
       }).join('') + '</div>';
     return h;
   }
