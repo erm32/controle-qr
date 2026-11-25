@@ -67,6 +67,8 @@ td.nc { color: var(--bad); font-weight: 700; }
 @media (min-width: 640px) { .tiles { grid-template-columns: repeat(3, 1fr); } }
 .tile { display: flex; align-items: center; justify-content: space-between; gap: 6px; text-align: left; border-radius: 10px; padding: 4px 4px 4px 10px; border: 2px solid var(--line); background: var(--surface); cursor: pointer; min-width: 0; }
 .tile .q { font-family: var(--mono); font-size: 20px; font-weight: 800; line-height: 1.1; overflow-wrap: anywhere; min-width: 0; }
+.tn { min-width: 0; display: flex; flex-direction: column; }
+.tile .td { font-size: 11px; font-weight: 700; color: var(--bad); line-height: 1.15; overflow-wrap: anywhere; }
 .tact { display: flex; gap: 4px; flex: none; }
 .tact .btn { width: 46px; min-height: 46px; margin-top: 0; font-size: 22px; padding: 0; border-radius: 10px; }
 .tile:focus-visible { outline: 3px solid var(--brand); outline-offset: 2px; }
