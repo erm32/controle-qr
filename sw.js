@@ -1,5 +1,5 @@
 // Service worker : permet d'ouvrir l'application sans réseau.
-var CACHE = 'cqr-v12';
+var CACHE = 'cqr-v13';
 var CDN = [];
 var SHELL = ['./', 'index.html', 'app.js', 'style.css', 'config.js', 'manifest.webmanifest', 'icon.svg', 'icon-192.png', 'icon-512.png'];
 

@@ -132,3 +132,9 @@ th { background: var(--none-bg); }
   .pill, .counter { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 }
 @media (max-width: 420px) { .defs { grid-template-columns: 1fr; } .stats { grid-template-columns: repeat(2, 1fr); } .row2 { grid-template-columns: 1fr; } }
+
+.chk { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; }
+.chk input { width: 20px; height: 20px; }
+.rep td, .rep th { white-space: nowrap; }
+.rep td:nth-child(11), .rep td:nth-child(12) { white-space: normal; min-width: 110px; max-width: 200px; }
+.rep th { font-size: 12px; }

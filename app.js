@@ -5,7 +5,7 @@
   var API = CFG.API || '';
   var MONTH = CFG.MONTHLY_DAYS || 30, YEAR = CFG.ANNUAL_DAYS || 365;
   var KEY = 'cqr.v1', SCHEMA = 2;
-  var VERSION = 'v12 (maintenance affichée)';
+  var VERSION = 'v13 (affichage et rapport)';
   var OKR = 'OK', BAD = 'À remplacer';
   var DEFECTS = ['À remplacer', 'Batterie à changer', 'Défaut alimentation', 'Défaut télécommande'];
   var DEFKEY = { BAD: 'À remplacer', BATT: 'Batterie à changer', ALIM: 'Défaut alimentation', TEL: 'Défaut télécommande' };
@@ -198,7 +198,7 @@
   /* ---------- Rendu général ---------- */
   function tabsFor() {
     if (isN1()) return [['home', 'Accueil'], ['list', 'Signaler un défaut']];
-    return [['list', 'Liste'], ['zones', 'Zones'], ['home', 'Site'], ['dash', 'Tous les sites'], ['tel', 'Télécommandes'], ['report', 'Rapport']];
+    return [['list', 'Liste'], ['zones', 'Zones'], ['home', 'Site'], ['dash', 'Tous les sites'], ['report', 'Rapport']];
   }
 
   function render() {
@@ -210,7 +210,6 @@
     else if (tab === 'dash') h += dashView();
     else if (tab === 'zones') h += zonesView();
     else if (tab === 'list') h += listView();
-    else if (tab === 'tel') h += telView();
     else if (tab === 'report') h += reportView();
     var keepFocus = document.activeElement && document.activeElement.id;
     var keepVal = keepFocus ? document.activeElement.value : null;
@@ -264,13 +263,14 @@
   }
 
   /* ---------- Compteurs et tableau de bord du site ---------- */
+  function addDays(iso, n) { var d = new Date(iso); d.setDate(d.getDate() + n); return d.toISOString(); }
   function counter(title, iso, limit, by, com) {
     var d = daysSince(iso), cls, big, sub;
     if (d === null) { cls = 'bad'; big = 'Jamais'; sub = 'Aucun contrôle enregistré'; }
     else {
       cls = d > limit ? 'bad' : (d > limit * 0.8 ? 'warn' : 'ok');
-      big = d === 0 ? 'Aujourd’hui' : plural(d, 'jour', 'jours');
-      sub = 'Le ' + fmtDate(iso) + (by ? ' par ' + esc(by) : '') + (d > limit ? ' · en retard de ' + plural(d - limit, 'jour', 'jours') : ' · échéance dans ' + plural(limit - d, 'jour', 'jours'));
+      big = d > limit ? 'Retard de ' + plural(d - limit, 'jour', 'jours') : 'Reste ' + plural(limit - d, 'jour', 'jours');
+      sub = 'Dernier contrôle : <b>' + fmtDate(iso) + '</b>' + (by ? ' par ' + esc(by) : '') + '<br>Prochain au plus tard le : <b>' + fmtDate(addDays(iso, limit)) + '</b>';
     }
     return '<div class="counter ' + cls + '"><div class="t">' + title + '</div><div class="n">' + big + '</div><div class="s">' + sub + '</div>' +
       (com ? '<div class="s">« ' + esc(com) + ' »</div>' : '') + '</div>';
@@ -283,13 +283,14 @@
     var h = siteSelect() + '<h2 style="margin:4px 2px 10px">' + esc(site || 'Aucun site') + '</h2>';
     h += counter('Dernier contrôle mensuel', so.dm, MONTH, so.mpar, so.mcom);
     if (!isN1()) h += '<div style="height:10px"></div>' + counter('Dernier contrôle annuel', so.da, YEAR, so.apar, so.acom);
-    h += '<div class="stats"><div class="stat"><b>' + list.length + '</b><span>Blocs</span></div><div class="stat"><b style="color:var(--ok)">' + nOk + '</b><span>OK</span></div>' +
-      '<div class="stat"><b style="color:var(--bad)">' + nBad + '</b><span>En défaut</span></div><div class="stat"><b>' + nNone + '</b><span>Jamais contrôlés</span></div></div>';
-    if (isN1()) h += '<button class="btn" data-act="monthly" ' + (site ? '' : 'disabled') + '>Contrôle mensuel fait</button>';
-    else h += '<button class="btn" data-act="annual" ' + (site ? '' : 'disabled') + '>Contrôle annuel terminé</button>';
-    var bad = list.filter(isDef).sort(cmpRef);
-    h += '<div class="group">En défaut (' + bad.length + ')</div>';
-    h += bad.length ? '<div class="list">' + bad.map(rowHtml).join('') + '</div>' : '<div class="card muted">Aucun bloc en défaut.</div>';
+    if (isN1()) {
+      h += '<div class="stats"><div class="stat"><b>' + list.length + '</b><span>Blocs</span></div><div class="stat"><b style="color:var(--ok)">' + nOk + '</b><span>OK</span></div>' +
+        '<div class="stat"><b style="color:var(--bad)">' + nBad + '</b><span>En défaut</span></div><div class="stat"><b>' + nNone + '</b><span>Jamais contrôlés</span></div></div>' +
+        '<button class="btn" data-act="monthly" ' + (site ? '' : 'disabled') + '>Contrôle mensuel fait</button>';
+      var bad = list.filter(isDef).sort(cmpRef);
+      h += '<div class="group">En défaut (' + bad.length + ')</div>';
+      h += bad.length ? '<div class="list">' + bad.map(rowHtml).join('') + '</div>' : '<div class="card muted">Aucun bloc en défaut.</div>';
+    } else h += '<button class="btn" data-act="annual" ' + (site ? '' : 'disabled') + '>Contrôle annuel terminé</button>';
     return h;
   }
 
@@ -326,27 +327,41 @@
   }
 
   /* ---------- Zones ---------- */
-  var ZN = null;
+  var ZN = null, REPFULL = false;
+  function tally(list) { var o = { n: list.length, ok: 0, bad: 0, none: 0 }; list.forEach(function (e) { if (isDef(e)) o.bad++; else if (!e.dc) o.none++; else o.ok++; }); return o; }
+  function pills(o) { return '<span class="pill ok">' + o.ok + ' OK</span> <span class="pill bad">' + o.bad + ' en défaut</span> <span class="pill none">' + o.none + ' à contrôler</span>'; }
   function zonesView() {
-    if (ZN) return zoneDetail();
+    if (ZN && ZN.tel) return '<button class="ghost" data-act="zback">‹ Bâtiments</button>' + telView();
+    if (ZN && ZN.zone) return zoneDetail();
     var site = curSite(), list = empOf(site), h = siteSelect();
-    var z = {};
-    list.forEach(function (e) { var k = e.zone || ''; var o = z[k] || (z[k] = { n: 0, ok: 0, bad: 0, none: 0 }); o.n++; if (isDef(e)) o.bad++; else if (!e.dc) o.none++; else o.ok++; });
-    var names = Object.keys(z).filter(Boolean).sort(function (a, b) { return a.localeCompare(b, 'fr'); });
-    h += '<p class="muted" style="margin:2px 2px 10px">Touchez une zone pour voir tous ses blocs (vert = OK, rouge = non conforme) et la valider d’un coup.</p>';
-    if (!names.length) h += '<div class="card muted">Aucune zone définie pour ce site. Indiquez une zone en créant un bloc, ou depuis sa fiche (« Modifier la fiche »).</div>';
-    h += '<div class="list">' + names.map(function (n) {
-      var o = z[n];
-      return '<button class="item' + (o.bad ? ' def' : '') + '" data-act="zopen" data-v="' + esc(n) + '"><span class="l"><span class="n">' + esc(n) + '</span><br><span class="s">' + plural(o.n, 'bloc', 'blocs') + '</span></span>' +
-        '<span style="text-align:right"><span class="pill ok">' + o.ok + ' OK</span> <span class="pill bad">' + o.bad + ' en défaut</span> <span class="pill none">' + o.none + ' à contrôler</span></span></button>';
-    }).join('') + '</div>';
-    if (z['']) h += '<p class="muted" style="margin:12px 2px">' + plural(z[''].n, 'bloc sans zone', 'blocs sans zone') + ' (voir l’onglet Liste).</p>';
+    if (ZN && ZN.bat !== undefined) {
+      var inB = list.filter(function (e) { return e.bat === ZN.bat; }), z = {};
+      inB.forEach(function (e) { (z[e.zone || ''] || (z[e.zone || ''] = [])).push(e); });
+      var names = Object.keys(z).filter(Boolean).sort(function (a, b) { return a.localeCompare(b, 'fr', { numeric: true }); });
+      h += '<button class="ghost" data-act="zback">‹ Bâtiments</button><h2 style="margin:0 2px 4px">Bâtiment ' + esc(ZN.bat) + '</h2><p class="muted" style="margin:0 2px 10px">Touchez une zone pour voir ses blocs et la valider d’un coup.</p>';
+      if (!names.length) h += '<div class="card muted">Aucune zone dans ce bâtiment.</div>';
+      h += '<div class="list">' + names.map(function (n) {
+        var o = tally(z[n]);
+        return '<button class="item' + (o.bad ? ' def' : '') + '" data-act="zopen" data-v="' + esc(n) + '"><span class="l"><span class="n">' + esc(n) + '</span><br><span class="s">' + plural(o.n, 'bloc', 'blocs') + '</span></span><span style="text-align:right">' + pills(o) + '</span></button>';
+      }).join('') + '</div>';
+      if (z['']) h += '<p class="muted" style="margin:12px 2px">' + plural(z[''].length, 'bloc sans zone', 'blocs sans zone') + ' dans ce bâtiment (voir l’onglet Liste).</p>';
+      return h;
+    }
+    var bats = {};
+    list.forEach(function (e) { (bats[e.bat] || (bats[e.bat] = [])).push(e); });
+    h += '<p class="muted" style="margin:2px 2px 10px">Choisissez un bâtiment pour voir ses zones.</p>';
+    if (!list.length) h += '<div class="card muted">Aucun bloc sur ce site.</div>';
+    h += '<div class="list">' + Object.keys(bats).sort(cmpNum).map(function (b) {
+      var o = tally(bats[b]), nz = {}; bats[b].forEach(function (e) { if (e.zone) nz[e.zone] = 1; });
+      return '<button class="item' + (o.bad ? ' def' : '') + '" data-act="bopen" data-v="' + esc(b) + '"><span class="l"><span class="n">Bâtiment ' + esc(b) + '</span><br><span class="s">' + plural(Object.keys(nz).length, 'zone', 'zones') + ' · ' + plural(o.n, 'bloc', 'blocs') + '</span></span><span style="text-align:right">' + pills(o) + '</span></button>';
+    }).join('') +
+    '<button class="item" data-act="ztel"><span class="l"><span class="n">Télécommandes</span><br><span class="s">' + plural(telsOf(site).length, 'télécommande', 'télécommandes') + '</span></span><span class="muted">›</span></button></div>';
     return h;
   }
   function zoneDetail() {
     var l = empOf(ZN.site).filter(function (e) { return e.zone === ZN.zone; }).sort(cmpRef);
     var bad = l.filter(isDef).length, ok = l.filter(function (e) { return !isDef(e) && e.dc; }).length, none = l.length - bad - ok, todo = l.length - bad;
-    var h = '<button class="ghost" data-act="zback">‹ Toutes les zones</button><h2 style="margin:0 2px 4px">Zone « ' + esc(ZN.zone) + ' »</h2>' +
+    var h = '<button class="ghost" data-act="zback">‹ Bâtiment ' + esc(ZN.bat || '') + '</button><h2 style="margin:0 2px 4px">Zone « ' + esc(ZN.zone) + ' »</h2>' +
       '<p class="muted" style="margin:0 2px 10px">' + esc(ZN.site) + ' · ' + plural(l.length, 'bloc', 'blocs') + '</p>' +
       '<div class="stats"><div class="stat"><b>' + l.length + '</b><span>Blocs</span></div><div class="stat"><b style="color:var(--ok)">' + ok + '</b><span>OK</span></div>' +
       '<div class="stat"><b style="color:var(--bad)">' + bad + '</b><span>Non conformes</span></div><div class="stat"><b>' + none + '</b><span>À contrôler</span></div></div>' +
@@ -376,11 +391,11 @@
       '<select class="in" data-act="fetat" aria-label="État"><option value="">Tous les états</option>' +
       [['ok', 'OK'], ['bad', 'En défaut'], ['none', 'Jamais contrôlés']].map(function (o) { return '<option value="' + o[0] + '"' + (F.etat === o[0] ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') + '</select></div>';
     if (!isN1()) h += '<button class="btn sm" data-act="newbloc" style="margin:0 0 10px"' + (site ? '' : ' disabled') + '>+ Ajouter un bloc</button>';
-    h += '<div class="treehead"><span class="tsite">' + esc(site || 'Aucun site') + '</span><span class="muted"> · ' + plural(items.length, 'bloc', 'blocs') + '</span></div>';
+    h += '<div class="treehead"><span class="tsite">' + esc(site || 'Aucun site') + '</span><span class="muted"> · total ' + cnt(items) + '</span></div>';
     if (!items.length) return h + '<div class="card muted">Aucun bloc.' + (isN1() ? '' : ' Utilisez « Ajouter un bloc ».') + '</div>';
     var bats = {};
     items.forEach(function (e) { var b = bats[e.bat] || (bats[e.bat] = {}); (b[e.etage] || (b[e.etage] = [])).push(e); });
-    function cnt(arr) { var bad = arr.filter(isDef).length; return plural(arr.length, 'bloc', 'blocs') + (bad ? ' · <b class="rd">' + bad + ' en défaut</b>' : ''); }
+    function cnt(arr) { var o = tally(arr); return plural(o.n, 'bloc', 'blocs') + ' · ' + o.ok + ' OK' + (o.bad ? ' · <b class="rd">' + o.bad + ' en défaut</b>' : '') + (o.none ? ' · ' + o.none + ' à contrôler' : ''); }
     Object.keys(bats).sort(cmpNum).forEach(function (bat) {
       var all = []; Object.keys(bats[bat]).forEach(function (et) { all = all.concat(bats[bat][et]); });
       var kb = 'b|' + bat;
@@ -418,7 +433,14 @@
   }
 
   /* ---------- Rapport ---------- */
-  function histText(e) {
+  function lastRepair(e) {
+    var labs = Object.keys(RESOL).map(function (k) { return RESOL[k].label; }), last = '';
+    (e.h || []).forEach(function (x) { if (labs.indexOf(x.split(' | ')[1] || '') !== -1) last = x; });
+    if (!last) return '';
+    var p = last.split(' | '); return fmtDate(p[0]) + ' ' + (p[1] || '');
+  }
+  function histText(e, full) {
+    if (!full) return lastRepair(e);
     return histVisible(e).map(function (x) { var p = x.split(' | '); return fmtDate(p[0]) + ' ' + (p[1] || '') + (p[2] ? ' (' + p[2] + ')' : ''); }).join(' ; ');
   }
   function etatText(e) { return isDef(e) ? e.res : (!e.dc ? 'Jamais contrôlé' : (daysSince(e.dc) > YEAR ? 'OK (ancien)' : 'OK')); }
@@ -427,7 +449,7 @@
 
   function reportView() {
     var all = S.site === '*', site = curSite(), h = siteSelect(true), now = new Date();
-    var head = '<div class="bar noprint"><button class="btn sm" data-act="print">Imprimer / PDF</button><button class="btn sm sec" data-act="csv">Exporter (tableur)</button></div>';
+    var head = '<div class="bar noprint"><button class="btn sm" data-act="print">Imprimer / PDF</button><button class="btn sm sec" data-act="csv">Exporter (tableur)</button>' + (all ? '' : '<label class="chk"><input type="checkbox" data-act="repfull"' + (REPFULL ? ' checked' : '') + '> Historique complet</label>') + '</div>';
     var meta = 'Édité le ' + fmtDate(now.toISOString()) + ' à ' + hhmm(now.toISOString()) + ' · données synchronisées le ' + (S.last ? fmtDate(S.last) + ' à ' + hhmm(S.last) : 'jamais') +
       (S.outbox.length ? ' · ' + plural(S.outbox.length, 'saisie en attente d’envoi', 'saisies en attente d’envoi') + ' (comprises)' : '');
     if (all) {
@@ -442,7 +464,7 @@
     var bad = l.filter(isDef).length, none = l.filter(function (e) { return !e.dc && !isDef(e); }).length;
     var tr = l.map(function (e) {
       return '<tr' + (isDef(e) ? ' class="def"' : '') + '><td>' + esc(e.bat) + '</td><td>' + esc(e.etage) + '</td><td class="rf">' + esc(e.ref) + '</td><td>' + esc(e.zone) + '</td><td>' + esc(e.type) + '</td><td>' + esc(telText(e)) + '</td><td>' +
-        (fmtDate(e.dc) || '—') + '</td><td>' + esc(etatText(e)) + '</td><td class="nc">' + (isDef(e) ? esc(e.res) : '') + '</td><td>' + (fmtDate(e.dr) || '—') + '</td><td>' + esc(e.cq) + '</td><td>' + esc(histText(e)) + '</td></tr>';
+        (fmtDate(e.dc) || '—') + '</td><td>' + esc(etatText(e)) + '</td><td class="nc">' + (isDef(e) ? esc(e.res) : '') + '</td><td>' + (fmtDate(e.dr) || '—') + '</td><td>' + esc(e.cq) + '</td><td>' + esc(histText(e, REPFULL)) + '</td></tr>';
     }).join('');
     var tt = telsOf(site).map(function (t) {
       return '<tr><td class="rf">' + esc(t.nom) + '</td><td>' + l.filter(function (e) { return e.tel === t.nom; }).length + '</td><td>' + (fmtDate(t.dr) || '—') + '</td><td>' + esc(t.com) + '</td></tr>';
@@ -450,7 +472,7 @@
     return h + head + '<div class="card rep"><h1>' + esc(site) + '</h1><div class="meta">' + meta + '</div>' +
       '<p>Contrôle mensuel : <b>' + (fmtDate(so.dm) || 'jamais') + '</b>' + (so.mpar ? ' par ' + esc(so.mpar) : '') + ' · Contrôle annuel : <b>' + (fmtDate(so.da) || 'jamais') + '</b>' + (so.apar ? ' par ' + esc(so.apar) : '') +
       '<br>' + plural(l.length, 'bloc', 'blocs') + ' · ' + (l.length - bad - none) + ' OK · <b>' + bad + ' en défaut</b> · ' + none + ' jamais contrôlés</p>' + defBreak(l) +
-      '<div class="tablewrap"><table><thead><tr><th>Bâtiment</th><th>Étage</th><th>Réf bloc</th><th>Zone</th><th>Type</th><th>Télécommande</th><th>Dernier contrôle</th><th>État</th><th>Non-conformité</th><th>Dernier remplacement</th><th>Commentaire</th><th>Historique depuis le dernier remplacement</th></tr></thead><tbody>' + tr + '</tbody></table></div>' +
+      '<div class="tablewrap"><table><thead><tr><th>Bâtiment</th><th>Étage</th><th>Réf bloc</th><th>Zone</th><th>Type</th><th>Télécommande</th><th>Dernier contrôle</th><th>État</th><th>Non-conformité</th><th>Dernier remplacement</th><th>Commentaire</th><th>' + (REPFULL ? 'Historique complet' : 'Dernier défaut réparé') + '</th></tr></thead><tbody>' + tr + '</tbody></table></div>' +
       (tt ? '<h3 style="margin:16px 0 6px">Télécommandes</h3><div class="tablewrap"><table><thead><tr><th>Télécommande</th><th>Blocs</th><th>Dernier remplacement</th><th>Commentaire</th></tr></thead><tbody>' + tt + '</tbody></table></div>' : '') + '</div>';
   }
 
@@ -461,11 +483,11 @@
   }
   function exportCsv() {
     var site = curSite(), all = S.site === '*';
-    var cols = ['Site', 'Bâtiment', 'Étage', 'Réf bloc', 'Zone', 'Type', 'Télécommande', 'Remplacement télécommande', 'Dernier contrôle', 'État', 'Non-conformité', 'Dernier remplacement', 'Commentaire', 'Commentaire de lieu', 'Historique depuis le dernier remplacement'];
+    var cols = ['Site', 'Bâtiment', 'Étage', 'Réf bloc', 'Zone', 'Type', 'Télécommande', 'Remplacement télécommande', 'Dernier contrôle', 'État', 'Non-conformité', 'Dernier remplacement', 'Commentaire', 'Commentaire de lieu', 'Dernier défaut réparé'];
     var lines = [cols.join(';')];
     (all ? view().emp : empOf(site)).slice().sort(function (a, b) { return a.site.localeCompare(b.site, 'fr') || cmpTree(a, b); }).forEach(function (e) {
       var t = e.tel && telObj(e.tel);
-      lines.push([e.site, e.bat, e.etage, e.ref, e.zone, e.type, e.tel, t ? fmtDate(t.dr) : '', fmtDate(e.dc), etatText(e), isDef(e) ? e.res : '', fmtDate(e.dr), e.cq, e.lc, histText(e)].map(function (c) { return '"' + String(c == null ? '' : c).replace(/"/g, '""') + '"'; }).join(';'));
+      lines.push([e.site, e.bat, e.etage, e.ref, e.zone, e.type, e.tel, t ? fmtDate(t.dr) : '', fmtDate(e.dc), etatText(e), isDef(e) ? e.res : '', fmtDate(e.dr), e.cq, e.lc, histText(e, false)].map(function (c) { return '"' + String(c == null ? '' : c).replace(/"/g, '""') + '"'; }).join(';'));
     });
     var blob = new Blob(['﻿' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' });
     var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'controle-' + (all ? 'tous-sites' : site.replace(/[^\w-]+/g, '_')) + '-' + new Date().toISOString().slice(0, 10) + '.csv';
@@ -661,8 +683,11 @@
     sync: function () { if (M && M.k === 'quit') M = null; sync(true); renderModal(); },
     quit: function () { if (S.outbox.length) openModal({ k: 'quit' }); else { forget(); render(); } },
     quitgo: function () { forget(); M = null; render(); },
-    zopen: function (el) { ZN = { site: curSite(), zone: el.getAttribute('data-v') }; render(); },
-    zback: function () { ZN = null; render(); },
+    bopen: function (el) { ZN = { site: curSite(), bat: el.getAttribute('data-v') }; render(); },
+    ztel: function () { ZN = { site: curSite(), tel: true }; render(); },
+    zopen: function (el) { ZN = { site: curSite(), bat: ZN ? ZN.bat : '', zone: el.getAttribute('data-v') }; render(); },
+    zback: function () { ZN = (ZN && ZN.zone && ZN.bat !== undefined) ? { site: ZN.site, bat: ZN.bat } : null; render(); },
+    repfull: function (el) { REPFULL = el.checked; render(); },
     gosite: function (el) { S.site = el.getAttribute('data-v'); save(); tab = 'home'; render(); },
     tab: function (el) { tab = el.getAttribute('data-v'); ZN = null; render(); },
     site: function (el) { S.site = el.value; ZN = null; save(); render(); },
@@ -750,7 +775,7 @@
   });
   document.addEventListener('change', function (e) {
     var el = e.target, a = el.getAttribute && el.getAttribute('data-act');
-    if (a && el.tagName === 'SELECT' && ACT[a]) ACT[a](el);
+    if (a && (el.tagName === 'SELECT' || (el.tagName === 'INPUT' && el.type === 'checkbox')) && ACT[a]) ACT[a](el);
   });
   document.addEventListener('input', function (e) { if (e.target.id === 'fq') { F.q = e.target.value; render(); } });
   document.addEventListener('toggle', function (e) { var t = e.target, k = t.getAttribute && t.getAttribute('data-k'); if (k) TREE[k] = t.open; }, true);
