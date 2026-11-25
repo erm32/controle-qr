@@ -5,7 +5,7 @@
   var API = CFG.API || '';
   var MONTH = CFG.MONTHLY_DAYS || 30, YEAR = CFG.ANNUAL_DAYS || 365;
   var KEY = 'cqr.v1', SCHEMA = 2;
-  var VERSION = 'v16 (niveau 1 : zones)';
+  var VERSION = 'v17 (diagnostic site)';
   var OKR = 'OK', BAD = 'À remplacer';
   var DEFECTS = ['À remplacer', 'Batterie à changer', 'Défaut alimentation', 'Défaut télécommande'];
   var DEFKEY = { BAD: 'À remplacer', BATT: 'Batterie à changer', ALIM: 'Défaut alimentation', TEL: 'Défaut télécommande' };
@@ -276,6 +276,11 @@
       (com ? '<div class="s">« ' + esc(com) + ' »</div>' : '') + '</div>';
   }
 
+  function diagHtml(site) {
+    var mine = (S.me && S.me.sites || []).join(', ') || '(aucun)';
+    if (!site) return '<div class="card"><b>Aucun site associé à ce code.</b><p class="muted" style="margin:6px 0 0">Colonne « Sites » de votre ligne dans la feuille Utilisateurs : ' + esc(mine) + '. Elle doit reprendre exactement le nom d’un site de la feuille Sites (actif). Prévenez l’administrateur.</p></div>';
+    return '<div class="card"><b>Aucun appareil enregistré pour le site « ' + esc(site) + ' ».</b><p class="muted" style="margin:6px 0 0">La colonne « Site » de la feuille Emplacements doit être exactement « ' + esc(site) + ' » (mêmes lettres, sans faute). Dernière synchronisation : ' + (S.last ? fmtDate(S.last) + ' ' + hhmm(S.last) : 'jamais') + '.</p></div>';
+  }
   function homeView() {
     var site = curSite(), so = siteObj(site), list = empOf(site);
     var nOk = 0, nBad = 0, nNone = 0;
@@ -285,6 +290,7 @@
     if (!isN1()) h += '<div style="height:10px"></div>' + counter('Dernier contrôle annuel', so.da, YEAR, so.apar, so.acom);
     if (isN1()) {
       var bad = list.filter(isDef).sort(cmpRef);
+      if (!list.length) h += '<div style="height:10px"></div>' + diagHtml(site);
       h += '<button class="btn" data-act="monthly" style="margin-top:12px"' + (site ? '' : ' disabled') + '>✔ Contrôle mensuel fait</button>' +
         '<div class="card" style="margin-top:14px"><h3 style="margin:0 0 6px">Appareil en défaut ?</h3>' +
         '<label class="lab" for="sig" style="margin-top:0">Numéro de l’appareil (plusieurs possibles : 12, 15, 27)</label>' +
@@ -352,7 +358,7 @@
     var bats = {};
     list.forEach(function (e) { (bats[e.bat] || (bats[e.bat] = [])).push(e); });
     h += '<p class="muted" style="margin:2px 2px 10px">Choisissez un bâtiment pour voir ses zones.</p>';
-    if (!list.length) h += '<div class="card muted">Aucun bloc sur ce site.</div>';
+    if (!list.length) h += diagHtml(site);
     h += '<div class="list">' + Object.keys(bats).sort(cmpNum).map(function (b) {
       var o = tally(bats[b]), nz = {}; bats[b].forEach(function (e) { if (e.zone) nz[e.zone] = 1; });
       return '<button class="item' + (o.bad ? ' def' : '') + '" data-act="bopen" data-v="' + esc(b) + '"><span class="l"><span class="n">Bâtiment ' + esc(b) + '</span><br><span class="s">' + plural(Object.keys(nz).length, 'zone', 'zones') + ' · ' + plural(o.n, 'bloc', 'blocs') + '</span></span><span style="text-align:right">' + pills(o) + '</span></button>';
