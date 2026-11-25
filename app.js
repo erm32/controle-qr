@@ -5,7 +5,7 @@
   var API = CFG.API || '';
   var MONTH = CFG.MONTHLY_DAYS || 30, YEAR = CFG.ANNUAL_DAYS || 365;
   var KEY = 'cqr.v1', SCHEMA = 2;
-  var VERSION = 'v13 (affichage et rapport)';
+  var VERSION = 'v14 (sites, date annuel, PDF paysage)';
   var OKR = 'OK', BAD = 'À remplacer';
   var DEFECTS = ['À remplacer', 'Batterie à changer', 'Défaut alimentation', 'Défaut télécommande'];
   var DEFKEY = { BAD: 'À remplacer', BATT: 'Batterie à changer', ALIM: 'Défaut alimentation', TEL: 'Défaut télécommande' };
@@ -141,7 +141,7 @@
 
   /* ---------- File d'attente et envoi ---------- */
   function enqueue(op) {
-    op.id = uid(); op.ts = Date.now();
+    op.id = uid(); op.ts = op.ts || Date.now();
     S.outbox.push(op); VIEW = null; save(); render(); scheduleSync(2000);
   }
   var syncTimer = 0;
@@ -317,12 +317,11 @@
     var nm = rows.filter(function (r) { return lateness(r.so.dm, MONTH) > 0; }).length, na = rows.filter(function (r) { return lateness(r.so.da, YEAR) > 0; }).length;
     var h = '<h2 style="margin:4px 2px 4px">Tous les sites</h2><p class="muted" style="margin:0 2px 12px">' + plural(rows.length, 'site', 'sites') + ' · ' + plural(nm, 'mensuel en retard', 'mensuels en retard') + ' · ' + plural(na, 'annuel en retard', 'annuels en retard') + '. Les plus en retard sont en premier.</p>';
     if (!rows.length) return h + '<div class="card muted">Aucun site.</div>';
-    h += '<div class="list">' + rows.map(function (r) {
-      return '<button class="item' + (r.bad ? ' def' : '') + '" data-act="gosite" data-v="' + esc(r.so.site) + '" style="align-items:flex-start"><span class="l"><span class="n">' + esc(r.so.site) + '</span><br>' +
-        '<span class="s">Mensuel : </span>' + ind(r.so.dm, MONTH) + (r.so.mpar ? ' <span class="s">' + esc(r.so.mpar) + '</span>' : '') + '<br>' +
-        '<span class="s">Annuel : </span>' + ind(r.so.da, YEAR) + (r.so.apar ? ' <span class="s">' + esc(r.so.apar) + '</span>' : '') + '</span>' +
-        '<span style="text-align:right"><span class="pill ' + (r.bad ? 'bad' : 'ok') + '">' + r.bad + ' en défaut</span><br><span class="s">' + r.n + ' blocs · ' + r.none + ' non contrôlés</span></span></button>';
-    }).join('') + '</div>';
+    h += rows.map(function (r) {
+      return '<div class="sitecard"><button class="ghost sitehead" data-act="gosite" data-v="' + esc(r.so.site) + '"><b>' + esc(r.so.site) + '</b> <span class="muted">· ' + plural(r.n, 'bloc', 'blocs') + ' · ' + r.ok + ' OK · ' +
+        (r.bad ? '<b class="rd">' + r.bad + ' en défaut</b>' : '0 en défaut') + (r.none ? ' · ' + r.none + ' à contrôler' : '') + ' ›</span></button>' +
+        counter('Dernier contrôle mensuel', r.so.dm, MONTH, r.so.mpar, r.so.mcom) + '<div style="height:8px"></div>' + counter('Dernier contrôle annuel', r.so.da, YEAR, r.so.apar, r.so.acom) + '</div>';
+    }).join('');
     return h;
   }
 
@@ -634,6 +633,7 @@
       var mo = M.k === 'monthly';
       h = '<h2>' + (mo ? 'Contrôle mensuel fait' : 'Contrôle annuel terminé') + '</h2><div class="muted">' + esc(M.site) + '</div>' +
         '<label class="lab" for="m-nom">Votre nom</label><input class="in" id="m-nom" maxlength="60" autocomplete="name" value="' + esc(mo ? (S.nom || '') : (S.nom || S.me.nom)) + '">' +
+        (mo ? '' : '<label class="lab" for="m-date">Date du contrôle</label><input class="in" type="date" id="m-date" value="' + today() + '" max="' + today() + '">') +
         '<label class="lab" for="m-com">Commentaire</label><textarea class="in" id="m-com" rows="3" maxlength="300" placeholder="Facultatif"></textarea><div class="err" id="m-err" role="alert"></div>' +
         '<button class="btn" data-act="mago">Valider</button><button class="btn sec" data-act="close">Annuler</button>';
     } else if (M.k === 'zoneok') {
@@ -755,6 +755,11 @@
     mago: function () {
       var nom = val('m-nom'); if (nom.length < 2) return setErr('Indiquez votre nom.');
       var op = { type: M.k === 'monthly' ? 'mensuel' : 'annuel', site: M.site, nom: nom, comment: val('m-com') };
+      if (M.k === 'annual') {
+        var dv = val('m-date'); if (!dv) return setErr('Indiquez la date du contrôle.');
+        if (dv > today()) return setErr('La date ne peut pas être dans le futur.');
+        if (dv !== today()) op.ts = new Date(dv + 'T12:00:00').getTime();
+      }
       var mo2 = M.k === 'monthly'; S.nom = nom; closeModal(); enqueue(op); toast(mo2 ? 'Contrôle mensuel enregistré' : 'Contrôle annuel enregistré');
     },
     zoneok: function (el) { openModal({ k: 'zoneok', site: curSite(), zone: el.getAttribute('data-v') }); },

@@ -121,7 +121,7 @@ th { background: var(--none-bg); }
 .lbl .tx { flex: none; width: 4.4mm; height: 15mm; display: flex; align-items: center; justify-content: center; }
 .lbl .id { font-family: var(--mono); font-weight: 800; font-size: 3.6mm; line-height: 1; white-space: nowrap; writing-mode: vertical-rl; transform: rotate(180deg); }
 
-@page { size: A4; margin: 6mm; }
+@page { size: A4 landscape; margin: 6mm; }
 @media print {
   .noprint { display: none !important; }
   body { background: #fff; color: #000; }
@@ -138,3 +138,16 @@ th { background: var(--none-bg); }
 .rep td, .rep th { white-space: nowrap; }
 .rep td:nth-child(11), .rep td:nth-child(12) { white-space: normal; min-width: 110px; max-width: 200px; }
 .rep th { font-size: 12px; }
+
+.sitecard { margin: 0 0 18px; }
+.sitehead { display: block; width: 100%; text-align: left; margin-bottom: 6px; font-size: 16px; }
+.rd { color: var(--bad); }
+@media print {
+  .rep .tablewrap { overflow: visible; }
+  .rep table { table-layout: auto; width: 100%; font-size: 10.5px; }
+  .rep th, .rep td { white-space: normal !important; min-width: 0 !important; max-width: none !important; padding: 2px 3px; overflow-wrap: anywhere; }
+  .rep th { font-size: 10px; }
+  .bar, #tabs, #hdr { display: none !important; }
+  .rep tr { break-inside: avoid; }
+  .rep thead { display: table-header-group; }
+}
