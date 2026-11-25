@@ -5,7 +5,7 @@
   var API = CFG.API || '';
   var MONTH = CFG.MONTHLY_DAYS || 30, YEAR = CFG.ANNUAL_DAYS || 365;
   var KEY = 'cqr.v1', SCHEMA = 2;
-  var VERSION = 'v14 (sites, date annuel, PDF paysage)';
+  var VERSION = 'v15 (interface niveau 1)';
   var OKR = 'OK', BAD = 'À remplacer';
   var DEFECTS = ['À remplacer', 'Batterie à changer', 'Défaut alimentation', 'Défaut télécommande'];
   var DEFKEY = { BAD: 'À remplacer', BATT: 'Batterie à changer', ALIM: 'Défaut alimentation', TEL: 'Défaut télécommande' };
@@ -197,7 +197,7 @@
 
   /* ---------- Rendu général ---------- */
   function tabsFor() {
-    if (isN1()) return [['home', 'Accueil'], ['list', 'Signaler un défaut']];
+    if (isN1()) return [['home', 'Accueil']];
     return [['list', 'Liste'], ['zones', 'Zones'], ['home', 'Site'], ['dash', 'Tous les sites'], ['report', 'Rapport']];
   }
 
@@ -284,12 +284,15 @@
     h += counter('Dernier contrôle mensuel', so.dm, MONTH, so.mpar, so.mcom);
     if (!isN1()) h += '<div style="height:10px"></div>' + counter('Dernier contrôle annuel', so.da, YEAR, so.apar, so.acom);
     if (isN1()) {
-      h += '<div class="stats"><div class="stat"><b>' + list.length + '</b><span>Blocs</span></div><div class="stat"><b style="color:var(--ok)">' + nOk + '</b><span>OK</span></div>' +
-        '<div class="stat"><b style="color:var(--bad)">' + nBad + '</b><span>En défaut</span></div><div class="stat"><b>' + nNone + '</b><span>Jamais contrôlés</span></div></div>' +
-        '<button class="btn" data-act="monthly" ' + (site ? '' : 'disabled') + '>Contrôle mensuel fait</button>';
       var bad = list.filter(isDef).sort(cmpRef);
-      h += '<div class="group">En défaut (' + bad.length + ')</div>';
-      h += bad.length ? '<div class="list">' + bad.map(rowHtml).join('') + '</div>' : '<div class="card muted">Aucun bloc en défaut.</div>';
+      h += '<button class="btn" data-act="monthly" style="margin-top:12px"' + (site ? '' : ' disabled') + '>✔ Contrôle mensuel fait</button>' +
+        '<div class="card" style="margin-top:14px"><h3 style="margin:0 0 6px">Appareil en défaut ?</h3>' +
+        '<label class="lab" for="sig" style="margin-top:0">Numéro de l’appareil (plusieurs possibles : 12, 15, 27)</label>' +
+        '<input class="in" id="sig" inputmode="text" autocomplete="off" autocapitalize="characters" autocorrect="off" spellcheck="false" value="' + esc(SIGTXT) + '">' +
+        (SIGMSG ? '<div class="err" role="alert">' + SIGMSG + '</div>' : '') +
+        '<button class="btn bad" data-act="sig"' + (site ? '' : ' disabled') + '>⚠ Signaler en défaut</button></div>';
+      h += '<div class="group">Appareils signalés en défaut (' + bad.length + ')</div>';
+      h += bad.length ? '<div class="card" style="display:flex;flex-wrap:wrap;gap:8px">' + bad.map(function (e) { return '<span class="pill bad rf" style="font-size:18px">' + esc(nom(e)) + '</span>'; }).join('') + '</div>' : '<div class="card muted">Aucun appareil signalé.</div>';
     } else h += '<button class="btn" data-act="annual" ' + (site ? '' : 'disabled') + '>Contrôle annuel terminé</button>';
     return h;
   }
@@ -326,7 +329,7 @@
   }
 
   /* ---------- Zones ---------- */
-  var ZN = null, REPFULL = false;
+  var ZN = null, REPFULL = false, SIGTXT = '', SIGMSG = '';
   function tally(list) { var o = { n: list.length, ok: 0, bad: 0, none: 0 }; list.forEach(function (e) { if (isDef(e)) o.bad++; else if (!e.dc) o.none++; else o.ok++; }); return o; }
   function pills(o) { return '<span class="pill ok">' + o.ok + ' OK</span> <span class="pill bad">' + o.bad + ' en défaut</span> <span class="pill none">' + o.none + ' à contrôler</span>'; }
   function zonesView() {
@@ -687,6 +690,22 @@
     ztel: function () { ZN = { site: curSite(), tel: true }; render(); },
     zopen: function (el) { ZN = { site: curSite(), bat: ZN ? ZN.bat : '', zone: el.getAttribute('data-v') }; render(); },
     zback: function () { ZN = (ZN && ZN.zone && ZN.bat !== undefined) ? { site: ZN.site, bat: ZN.bat } : null; render(); },
+    sig: function () {
+      var site = curSite(), toks = SIGTXT.split(/[\s,;]+/).filter(Boolean), list = empOf(site), n = 0, unk = [], dup = [];
+      SIGMSG = '';
+      if (!toks.length) { SIGMSG = 'Saisissez au moins un numéro.'; return render(); }
+      toks.forEach(function (t) {
+        var e = list.filter(function (x) { return String(x.ref).toLowerCase() === t.toLowerCase(); })[0];
+        if (!e) unk.push(t); else if (isDef(e)) dup.push(e.ref); else { enqueue({ type: 'controle', eid: e.id, result: BAD }); n++; }
+      });
+      SIGTXT = unk.join(', ');
+      var m = [];
+      if (unk.length) m.push('Numéro inconnu sur ce site : ' + esc(unk.join(', ')) + '.');
+      if (dup.length) m.push('Déjà signalé : ' + esc(dup.join(', ')) + '.');
+      SIGMSG = m.join(' ');
+      if (n) toast(plural(n, 'appareil signalé', 'appareils signalés'));
+      render();
+    },
     repfull: function (el) { REPFULL = el.checked; render(); },
     gosite: function (el) { S.site = el.getAttribute('data-v'); save(); tab = 'home'; render(); },
     tab: function (el) { tab = el.getAttribute('data-v'); ZN = null; render(); },
@@ -782,11 +801,12 @@
     var el = e.target, a = el.getAttribute && el.getAttribute('data-act');
     if (a && (el.tagName === 'SELECT' || (el.tagName === 'INPUT' && el.type === 'checkbox')) && ACT[a]) ACT[a](el);
   });
-  document.addEventListener('input', function (e) { if (e.target.id === 'fq') { F.q = e.target.value; render(); } });
+  document.addEventListener('input', function (e) { if (e.target.id === 'fq') { F.q = e.target.value; render(); } else if (e.target.id === 'sig') SIGTXT = e.target.value; });
   document.addEventListener('toggle', function (e) { var t = e.target, k = t.getAttribute && t.getAttribute('data-k'); if (k) TREE[k] = t.open; }, true);
   document.addEventListener('keydown', function (e) {
     if (e.key !== 'Enter') return;
     if (e.target.id === 'code') ACT.login();
+    else if (e.target.id === 'sig') ACT.sig();
     else if (e.target.classList && e.target.classList.contains('tile')) ACT.emp(e.target);
   });
 
