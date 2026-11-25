@@ -5,7 +5,7 @@
   var API = CFG.API || '';
   var MONTH = CFG.MONTHLY_DAYS || 30, YEAR = CFG.ANNUAL_DAYS || 365;
   var KEY = 'cqr.v1', SCHEMA = 2;
-  var VERSION = 'v9 (sans QR, réf bloc, télécommandes)';
+  var VERSION = 'v10 (boutons maintenance dans les zones)';
   var OKR = 'OK', BAD = 'À remplacer';
   var DEFECTS = ['À remplacer', 'Batterie à changer', 'Défaut alimentation', 'Défaut télécommande'];
   var DEFKEY = { BAD: 'À remplacer', BATT: 'Batterie à changer', ALIM: 'Défaut alimentation', TEL: 'Défaut télécommande' };
@@ -354,9 +354,10 @@
       '<div class="tiles">' + l.map(function (e) {
         var c = isDef(e) ? 'bad' : (e.dc ? 'ok' : 'none');
         function ln(k, v) { return '<div class="ln"><span class="k">' + k + '</span><span class="v">' + (v ? esc(v) : '&nbsp;') + '</span></div>'; }
-        return '<button class="tile ' + c + '" data-act="emp" data-v="' + esc(e.id) + '"><b class="q">' + esc(nom(e)) + '</b>' +
+        return '<div class="tile ' + c + '" role="button" tabindex="0" data-act="emp" data-v="' + esc(e.id) + '"><b class="q">' + esc(nom(e)) + '</b>' +
           ln('État', isDef(e) ? e.res : (e.dc ? 'OK' : 'À contrôler')) + ln('Bâtiment', e.bat) + ln('Étage', e.etage) + ln('Type', e.type) + ln('Télécommande', e.tel) +
-          ln('Commentaire de lieu', e.lc) + ln('Dernier contrôle', fmtDate(e.dc)) + ln('Dernier remplacement', fmtDate(e.dr)) + ln('Commentaire', e.cq) + '</button>';
+          ln('Commentaire de lieu', e.lc) + ln('Dernier contrôle', fmtDate(e.dc)) + ln('Dernier remplacement', fmtDate(e.dr)) + ln('Commentaire', e.cq) +
+          '<div class="tact"><button class="btn bad" data-act="maint" data-v="' + esc(e.id) + '">⚠ Maintenance à faire</button><button class="btn ok" data-act="ack" data-v="' + esc(e.id) + '">' + (isDef(e) ? '✔ Acquitter' : '✔ Contrôle OK') + '</button></div></div>';
       }).join('') + '</div>';
     return h;
   }
@@ -569,6 +570,21 @@
         '<div class="group" style="padding:12px 0 0">Signaler un défaut</div><div class="defs">' + defBtns(e) + '</div>' +
         '<div class="row2"><button class="btn sec" data-act="repl">Remplacer le bloc</button><button class="btn sec" data-act="edit">Modifier la fiche</button></div>' +
         '<button class="btn sec" data-act="close">Fermer</button>';
+    } else if (M.k === 'maint' && e) {
+      h = '<h2 class="rfbig">' + esc(nom(e)) + '</h2><p style="font-size:18px;margin:0 0 4px"><b>Opération de maintenance à faire</b> : choisissez dans la liste.</p>' +
+        (isDef(e) ? '<p class="muted" style="margin:4px 0 0">Statut actuel : ' + esc(e.res) + '.</p>' : '') +
+        '<label class="lab" for="m-com">Commentaire</label><input class="in" id="m-com" maxlength="300" placeholder="Facultatif" value="' + esc(e.cq) + '">' +
+        '<div class="defs" style="margin-top:12px">' + defBtns(e) + '</div><button class="btn sec" data-act="close">Annuler</button>';
+    } else if (M.k === 'ack' && e) {
+      var rk = Object.keys(RESOL).filter(function (k) { return RESOL[k].from === e.res; })[0];
+      h = '<h2 class="rfbig">' + esc(nom(e)) + '</h2>';
+      if (rk) h += '<p style="font-size:18px">Confirmez-vous : <b>' + RESOL[rk].label + '</b> ? Le bloc repasse « OK » à la date d’aujourd’hui et l’opération reste dans l’historique.</p>' +
+        '<label class="lab" for="m-com">Commentaire</label><input class="in" id="m-com" maxlength="300" placeholder="Facultatif">' +
+        '<button class="btn ok" data-act="resol" data-v="' + rk + '">Oui, ' + RESOL[rk].label.toLowerCase() + '</button><button class="btn sec" data-act="close">Annuler</button>';
+      else if (isDef(e)) h += '<p style="font-size:18px">Ce bloc est <b>à remplacer</b> : ce statut ne se lève que par un remplacement.</p><button class="btn" data-act="repl">Remplacer le bloc</button><button class="btn sec" data-act="close">Annuler</button>';
+      else h += '<p style="font-size:18px">Confirmez-vous un <b>nouveau contrôle OK</b> à la date d’aujourd’hui (' + fmtDate(new Date().toISOString()) + ') ?</p>' + (e.dc ? '<p class="muted" style="margin:0">Dernier contrôle : ' + fmtDate(e.dc) + '.</p>' : '') +
+        '<label class="lab" for="m-com">Commentaire</label><input class="in" id="m-com" maxlength="300" placeholder="Facultatif" value="' + esc(e.cq) + '">' +
+        '<button class="btn ok" data-act="ctl" data-v="OK">Oui, contrôle OK</button><button class="btn sec" data-act="close">Annuler</button>';
     } else if (M.k === 'defect' && e) {
       h = empInfo(e) + (isDef(e) ? '<p class="muted" style="margin:10px 0 0">Déjà signalé : ' + esc(e.res) + '.</p>' : '') +
         '<div class="group" style="padding:12px 0 0">Signaler un défaut</div><div class="defs">' + defBtns(e) + '</div><button class="btn sec" data-act="close">Fermer</button>';
@@ -657,6 +673,8 @@
     fetat: function (el) { F.etat = el.value; render(); },
     emp: function (el) { openModal({ k: isN1() ? 'defect' : 'ctl', id: el.getAttribute('data-v') }); },
     close: function () { closeModal(); },
+    maint: function (el) { openModal({ k: 'maint', id: el.getAttribute('data-v') }); },
+    ack: function (el) { openModal({ k: 'ack', id: el.getAttribute('data-v') }); },
     ctl: function (el) {
       var e = view().byId[M.id], k = el.getAttribute('data-v'), res = k === 'OK' ? OKR : DEFKEY[k];
       var op = { type: 'controle', eid: e.id, result: res };
@@ -739,7 +757,11 @@
   });
   document.addEventListener('input', function (e) { if (e.target.id === 'fq') { F.q = e.target.value; render(); } });
   document.addEventListener('toggle', function (e) { var t = e.target, k = t.getAttribute && t.getAttribute('data-k'); if (k) TREE[k] = t.open; }, true);
-  document.addEventListener('keydown', function (e) { if (e.key === 'Enter' && e.target.id === 'code') ACT.login(); });
+  document.addEventListener('keydown', function (e) {
+    if (e.key !== 'Enter') return;
+    if (e.target.id === 'code') ACT.login();
+    else if (e.target.classList && e.target.classList.contains('tile')) ACT.emp(e.target);
+  });
 
   window.addEventListener('online', function () { netFail = false; renderHeader(); sync(); });
   window.addEventListener('offline', function () { renderHeader(); });
