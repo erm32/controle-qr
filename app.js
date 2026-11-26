@@ -5,7 +5,7 @@
   var API = CFG.API || '';
   var MONTH = CFG.MONTHLY_DAYS || 30, YEAR = CFG.ANNUAL_DAYS || 365;
   var KEY = 'cqr.v1', SCHEMA = 2;
-  var VERSION = 'v21 (ajout depuis la zone)';
+  var VERSION = 'v22 (télécommande par zones)';
   var OKR = 'OK', BAD = 'À remplacer', SIG = 'Signalé en défaut';
   var DEFECTS = ['À remplacer', 'Batterie à changer', 'Défaut alimentation', 'Défaut télécommande', 'Signalé en défaut'];
   var DEFKEY = { BAD: 'À remplacer', BATT: 'Batterie à changer', ALIM: 'Défaut alimentation', TEL: 'Défaut télécommande' };
@@ -445,7 +445,7 @@
         '<span class="s">' + plural(bl.length, 'bloc', 'blocs') + (bl.length ? ' : ' + esc(bl.map(function (e) { return e.ref; }).join(', ')) : '') + '</span><br>' +
         '<span class="s">Dernier remplacement : <b>' + (t.dr ? fmtDate(t.dr) : 'non renseigné') + '</b>' + (late !== null ? ' (il y a ' + plural(late, 'jour', 'jours') + ')' : '') + '</span>' +
         (t.com ? '<br><span class="s">« ' + esc(t.com) + ' »</span>' : '') + '</span>' +
-        '<button class="btn sm sec" data-act="telremp" data-v="' + esc(t.nom) + '">Remplacée…</button></div>';
+        '<span style="display:flex;flex-direction:column;gap:6px"><button class="btn sm sec" data-act="telremp" data-v="' + esc(t.nom) + '">Remplacée…</button><button class="btn sm sec" data-act="telzones" data-v="' + esc(t.nom) + '">Affecter à des zones…</button></span></div>';
     }).join('') + '</div>';
     if (sans) h += '<p class="muted" style="margin:12px 2px">' + plural(sans, 'bloc sans télécommande', 'blocs sans télécommande') + '.</p>';
     return h;
@@ -644,6 +644,16 @@
         '<label class="lab" for="m-mat">Type du nouveau matériel</label><input class="in" id="m-mat" list="types" maxlength="60" value="' + esc(e.type) + '"><datalist id="types">' + typesAll().map(function (t) { return '<option value="' + esc(t) + '">'; }).join('') + '</datalist>' +
         '<p class="muted" style="margin:10px 0 0">Le bâtiment, l’étage, la zone et la télécommande sont conservés. L’état passe à « OK » à la date du jour et l’historique repart à zéro.</p>' +
         '<div class="err" id="m-err" role="alert"></div><button class="btn" data-act="replgo">Confirmer le remplacement</button><button class="btn sec" data-act="close">Annuler</button>';
+    } else if (M.k === 'telzones') {
+      var zl = zonesOf(M.site);
+      h = '<h2>Affecter ' + esc(M.nom) + ' à des zones</h2><div class="muted">' + esc(M.site) + '</div>' +
+        '<p style="margin:10px 0 0">Cochez les zones : tous leurs blocs seront commandés par cette télécommande.</p>' +
+        (zl.length ? zl.map(function (z, k) {
+          var bl = empOf(M.site).filter(function (x) { return x.zone === z; }), ja = bl.filter(function (x) { return x.tel === M.nom; }).length, aut = bl.filter(function (x) { return x.tel && x.tel !== M.nom; }).length;
+          return '<label style="display:flex;gap:10px;align-items:center;margin-top:12px;font-size:17px"><input type="checkbox" class="zchk" data-z="' + esc(z) + '" style="width:24px;height:24px"> <span><b>' + esc(z) + '</b> · ' + plural(bl.length, 'bloc', 'blocs') +
+            (ja ? '<br><span class="muted" style="font-size:14px">' + ja + ' déjà sur ' + esc(M.nom) + '</span>' : '') + (aut ? '<br><span class="muted" style="font-size:14px">' + plural(aut, 'bloc quitte', 'blocs quittent') + ' une autre télécommande</span>' : '') + '</span></label>';
+        }).join('') : '<div class="card muted" style="margin-top:10px">Aucune zone définie sur ce site.</div>') +
+        '<div class="err" id="m-err" role="alert"></div><button class="btn" data-act="telzgo">Affecter</button><button class="btn sec" data-act="close">Annuler</button>';
     } else if (M.k === 'telnew') {
       h = '<h2>Nouvelle télécommande</h2><div class="muted">' + esc(M.site) + '</div>' +
         '<label class="lab" for="m-nom">Nom / numéro</label><input class="in" id="m-nom" maxlength="60" placeholder="Ex. TC-01">' +
@@ -794,6 +804,15 @@
       var ex = view().tel.filter(function (t) { return t.nom.toLowerCase() === n.toLowerCase(); })[0];
       if (ex) return setErr(ex.site === M.site ? 'Cette télécommande existe déjà.' : 'Cette télécommande existe déjà sur le site ' + ex.site + '.');
       var site = M.site; closeModal(); enqueue({ type: 'telcreation', nom: n, site: site }); toast('Télécommande créée : ' + n);
+    },
+    telzones: function (el) { openModal({ k: 'telzones', nom: el.getAttribute('data-v'), site: curSite() }); },
+    telzgo: function () {
+      var zs = Array.prototype.slice.call(document.querySelectorAll('.zchk')).filter(function (c) { return c.checked; }).map(function (c) { return c.getAttribute('data-z'); });
+      if (!zs.length) return setErr('Cochez au moins une zone.');
+      var nom0 = M.nom, site = M.site, todo = empOf(site).filter(function (e) { return zs.indexOf(e.zone) !== -1 && e.tel !== nom0; });
+      closeModal();
+      todo.forEach(function (e) { enqueue({ type: 'modifier', eid: e.id, site: e.site, bat: e.bat, etage: e.etage, ref: e.ref, lc: e.lc, mat: e.type, zone: e.zone, tel: nom0, reset: false }); });
+      toast(todo.length ? plural(todo.length, 'bloc affecté', 'blocs affectés') + ' à ' + nom0 : 'Rien à changer : déjà affectés.');
     },
     telremp: function (el) { openModal({ k: 'telremp', nom: el.getAttribute('data-v') }); },
     telrempgo: function () {
