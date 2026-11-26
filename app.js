@@ -5,11 +5,11 @@
   var API = CFG.API || '';
   var MONTH = CFG.MONTHLY_DAYS || 30, YEAR = CFG.ANNUAL_DAYS || 365;
   var KEY = 'cqr.v1', SCHEMA = 2;
-  var VERSION = 'v17 (diagnostic site)';
-  var OKR = 'OK', BAD = 'À remplacer';
-  var DEFECTS = ['À remplacer', 'Batterie à changer', 'Défaut alimentation', 'Défaut télécommande'];
+  var VERSION = 'v19 (signalement annulable)';
+  var OKR = 'OK', BAD = 'À remplacer', SIG = 'Signalé en défaut';
+  var DEFECTS = ['À remplacer', 'Batterie à changer', 'Défaut alimentation', 'Défaut télécommande', 'Signalé en défaut'];
   var DEFKEY = { BAD: 'À remplacer', BATT: 'Batterie à changer', ALIM: 'Défaut alimentation', TEL: 'Défaut télécommande' };
-  var RESOL = { batterie: { from: 'Batterie à changer', label: 'Batterie changée', btn: 'Batterie changée' }, alim: { from: 'Défaut alimentation', label: 'Alimentation réparée', btn: 'Alim réparée' }, telecommande: { from: 'Défaut télécommande', label: 'Télécommande réparée', btn: 'Télécommande réparée' } };
+  var RESOL = { batterie: { from: 'Batterie à changer', label: 'Batterie changée', btn: 'Batterie changée' }, alim: { from: 'Défaut alimentation', label: 'Alimentation réparée', btn: 'Alim réparée' }, telecommande: { from: 'Défaut télécommande', label: 'Télécommande réparée', btn: 'Télécommande réparée' } , signal: { from: 'Signalé en défaut', label: 'Signalement levé (OK)', btn: 'Signalement levé (OK)' } };
   function isDef(e) { return DEFECTS.indexOf(e.res) !== -1; }
 
   /* ---------- Outils ---------- */
@@ -63,10 +63,18 @@
     var e, i;
     if (op.type === 'controle') {
       e = findE(d, op.eid); if (!e) return;
-      var rs0 = DEFECTS.indexOf(op.result) !== -1 ? op.result : (isN1() ? BAD : OKR);
+      var rs0 = isN1() ? SIG : (DEFECTS.indexOf(op.result) !== -1 ? op.result : OKR);
+      if (isN1()) { if (!isDef(e)) { pushHist(e, op.ts, SIG); e.res = SIG; } return; }
       if (rs0 !== OKR) pushHist(e, op.ts, rs0);
       if (!e.dc || op.ts >= Date.parse(e.dc)) { e.dc = iso(op.ts); e.res = rs0; }
       if (op.comment && !isN1()) e.cq = op.comment;
+    } else if (op.type === 'annulsig') {
+      e = findE(d, op.eid);
+      if (e && e.res === SIG) {
+        var hh = e.h || [], hk = -1; hh.forEach(function (x, k) { if ((x.split(' | ')[1] || '') === SIG) hk = k; });
+        if (hk >= 0) hh.splice(hk, 1);
+        e.res = e.dc ? OKR : '';
+      }
     } else if (op.type === 'resolution') {
       e = findE(d, op.eid); var rz = RESOL[op.kind];
       if (e && rz && e.res === rz.from) { pushHist(e, op.ts, rz.label); e.dc = iso(op.ts); e.res = OKR; if (op.comment) e.cq = op.comment; }
@@ -129,6 +137,7 @@
     return Object.keys(z).sort(function (a, b) { return a.localeCompare(b, 'fr'); });
   }
   function stateOf(e) {
+    if (e.res === SIG) return { c: 'sig', t: 'Signalé' };
     if (isDef(e)) return { c: 'bad', t: e.res };
     if (!e.dc) return { c: 'none', t: 'Jamais contrôlé' };
     var d = daysSince(e.dc);
@@ -289,7 +298,6 @@
     h += counter('Dernier contrôle mensuel', so.dm, MONTH, so.mpar, so.mcom);
     if (!isN1()) h += '<div style="height:10px"></div>' + counter('Dernier contrôle annuel', so.da, YEAR, so.apar, so.acom);
     if (isN1()) {
-      var bad = list.filter(isDef).sort(cmpRef);
       if (!list.length) h += '<div style="height:10px"></div>' + diagHtml(site);
       h += '<button class="btn" data-act="monthly" style="margin-top:12px"' + (site ? '' : ' disabled') + '>✔ Contrôle mensuel fait</button>' +
         '<div class="card" style="margin-top:14px"><h3 style="margin:0 0 6px">Appareil en défaut ?</h3>' +
@@ -297,14 +305,15 @@
         '<input class="in" id="sig" inputmode="text" autocomplete="off" autocapitalize="characters" autocorrect="off" spellcheck="false" value="' + esc(SIGTXT) + '">' +
         (SIGMSG ? '<div class="err" role="alert">' + SIGMSG + '</div>' : '') +
         '<button class="btn bad" data-act="sig"' + (site ? '' : ' disabled') + '>⚠ Signaler en défaut</button></div>';
-      h += '<div class="group">Appareils signalés en défaut (' + bad.length + ')</div>';
-      h += bad.length ? '<div class="card" style="display:flex;flex-wrap:wrap;gap:8px">' + bad.map(function (e) { return '<span class="pill bad rf" style="font-size:18px">' + esc(nom(e)) + '</span>'; }).join('') + '</div>' : '<div class="card muted">Aucun appareil signalé.</div>';
+      var sg = list.filter(function (e) { return e.res === SIG; }).sort(cmpRef);
+      h += '<div class="group">Appareils signalés (' + sg.length + ') — touchez pour annuler une erreur</div>';
+      h += sg.length ? '<div class="card" style="display:flex;flex-wrap:wrap;gap:8px">' + sg.map(function (e) { return '<button class="pill sig rf" data-act="emp" data-v="' + esc(e.id) + '" style="font-size:18px;cursor:pointer">' + esc(nom(e)) + '</button>'; }).join('') + '</div>' : '<div class="card muted">Aucun appareil signalé.</div>';
     } else h += '<button class="btn" data-act="annual" ' + (site ? '' : 'disabled') + '>Contrôle annuel terminé</button>';
     return h;
   }
 
   function rowHtml(e) {
-    return '<button class="item' + (isDef(e) ? ' def' : '') + '" data-act="emp" data-v="' + esc(e.id) + '"><span class="l"><span class="n rf">' + esc(nom(e)) + '</span><br><span class="s">' +
+    return '<button class="item' + (e.res === SIG ? ' sigc' : (isDef(e) ? ' def' : '')) + '" data-act="emp" data-v="' + esc(e.id) + '"><span class="l"><span class="n rf">' + esc(nom(e)) + '</span><br><span class="s">' +
       esc(e.type) + (e.zone ? ' · zone ' + esc(e.zone) : '') + (e.tel ? ' · télécommande ' + esc(e.tel) : '') +
       (e.cq ? '<br>« ' + esc(e.cq) + ' »' : '') + '</span></span>' + pill(e) + '</button>';
   }
@@ -375,8 +384,8 @@
       '<div class="stat"><b style="color:var(--bad)">' + bad + '</b><span>Non conformes</span></div><div class="stat"><b>' + none + '</b><span>À contrôler</span></div></div>' +
       (isN1() ? '<p class="muted" style="margin:0 2px 8px">Touchez ⚠ ou le numéro d’un appareil pour le signaler en défaut.</p>' : '<button class="btn ok" data-act="zoneok" data-v="' + esc(ZN.zone) + '"' + (todo ? '' : ' disabled') + '>OK pour toute la zone' + (bad ? ' (sauf ' + bad + ' non conforme' + (bad > 1 ? 's' : '') + ')' : '') + '</button>') +
       '<div class="tiles">' + l.map(function (e) {
-        var c = isDef(e) ? 'bad' : (e.dc ? 'ok' : 'none');
-        return '<div class="tile ' + c + '" role="button" tabindex="0" data-act="emp" data-v="' + esc(e.id) + '" title="' + esc(isDef(e) ? e.res : (e.dc ? 'OK' : 'À contrôler')) + '"><div class="tn"><b class="q">' + esc(nom(e)) + '</b>' + (isDef(e) ? '<small class="td">' + esc(e.res) + '</small>' : '') + '</div>' +
+        var c = e.res === SIG ? 'sig' : (isDef(e) ? 'bad' : (e.dc ? 'ok' : 'none'));
+        return '<div class="tile ' + c + '" role="button" tabindex="0" data-act="emp" data-v="' + esc(e.id) + '" title="' + esc(isDef(e) ? e.res : (e.dc ? 'OK' : 'À contrôler')) + '"><div class="tn"><b class="q">' + esc(nom(e)) + '</b>' + (isDef(e) ? '<small class="td">' + esc(e.res === SIG ? 'Signalé, à qualifier' : e.res) + '</small>' : '') + '</div>' +
           '<div class="tact"><button class="btn bad" data-act="maint" data-v="' + esc(e.id) + '" aria-label="' + (isN1() ? 'Signaler en défaut' : 'Maintenance à faire') + '">⚠</button>' + (isN1() ? '' : '<button class="btn ok" data-act="ack" data-v="' + esc(e.id) + '" aria-label="' + (isDef(e) ? 'Acquitter' : 'Contrôle OK') + '">✔</button>') + '</div></div>';
       }).join('') + '</div>';
     return h;
@@ -471,7 +480,7 @@
     var so = siteObj(site), l = empOf(site).sort(cmpTree);
     var bad = l.filter(isDef).length, none = l.filter(function (e) { return !e.dc && !isDef(e); }).length;
     var tr = l.map(function (e) {
-      return '<tr' + (isDef(e) ? ' class="def"' : '') + '><td>' + esc(e.bat) + '</td><td>' + esc(e.etage) + '</td><td class="rf">' + esc(e.ref) + '</td><td>' + esc(e.zone) + '</td><td>' + esc(e.type) + '</td><td>' + esc(telText(e)) + '</td><td>' +
+      return '<tr' + (e.res === SIG ? ' class="sigc"' : (isDef(e) ? ' class="def"' : '')) + '><td>' + esc(e.bat) + '</td><td>' + esc(e.etage) + '</td><td class="rf">' + esc(e.ref) + '</td><td>' + esc(e.zone) + '</td><td>' + esc(e.type) + '</td><td>' + esc(telText(e)) + '</td><td>' +
         (fmtDate(e.dc) || '—') + '</td><td>' + esc(etatText(e)) + '</td><td class="nc">' + (isDef(e) ? esc(e.res) : '') + '</td><td>' + (fmtDate(e.dr) || '—') + '</td><td>' + esc(e.cq) + '</td><td>' + esc(histText(e, REPFULL)) + '</td></tr>';
     }).join('');
     var tt = telsOf(site).map(function (t) {
@@ -599,7 +608,7 @@
         '<button class="btn sec" data-act="close">Fermer</button>';
     } else if (M.k === 'maint' && e) {
       h = '<h2 class="rfbig">' + esc(nom(e)) + '</h2><p style="font-size:18px;margin:0 0 4px"><b>Opération de maintenance à faire</b> : choisissez dans la liste.</p>' +
-        (isDef(e) ? '<p class="muted" style="margin:4px 0 0">Statut actuel : ' + esc(e.res) + '.</p>' : '') +
+        (isDef(e) ? '<p class="muted" style="margin:4px 0 0">Statut actuel : ' + esc(e.res) + (e.res === SIG ? ' (par le niveau 1) : précisez le problème ci-dessous, ou levez le signalement avec le bouton vert.' : '.') + '</p>' : '') +
         '<label class="lab" for="m-com">Commentaire</label><input class="in" id="m-com" maxlength="300" placeholder="Facultatif" value="' + esc(e.cq) + '">' +
         '<div class="defs" style="margin-top:12px">' + defBtns(e) + '</div><button class="btn sec" data-act="close">Annuler</button>';
     } else if (M.k === 'ack' && e) {
@@ -614,7 +623,8 @@
         '<button class="btn ok" data-act="ctl" data-v="OK">Oui, contrôle OK</button><button class="btn sec" data-act="close">Annuler</button>';
     } else if (M.k === 'sigone' && e) {
       h = '<h2 class="rfbig">' + esc(nom(e)) + '</h2><div class="muted">' + esc(e.bat) + ' · étage ' + esc(e.etage) + (e.zone ? ' · zone ' + esc(e.zone) : '') + '</div>' +
-        (isDef(e) ? '<p style="font-size:18px">Cet appareil est déjà signalé en défaut.</p><button class="btn sec" data-act="close">Fermer</button>' :
+        (e.res === SIG ? '<p style="font-size:18px">Cet appareil est signalé en défaut. Signalé par erreur ?</p><button class="btn" data-act="annsig" data-v="' + esc(e.id) + '">Annuler le signalement</button><button class="btn sec" data-act="close">Fermer</button>' :
+        isDef(e) ? '<p style="font-size:18px">Cet appareil est déjà en défaut : la maintenance s’en occupe.</p><button class="btn sec" data-act="close">Fermer</button>' :
         '<p style="font-size:18px">Signaler cet appareil en défaut ?</p><button class="btn bad" data-act="sigok" data-v="' + esc(e.id) + '">⚠ Oui, signaler en défaut</button><button class="btn sec" data-act="close">Annuler</button>');
     } else if (M.k === 'defect' && e) {
       h = empInfo(e) + (isDef(e) ? '<p class="muted" style="margin:10px 0 0">Déjà signalé : ' + esc(e.res) + '.</p>' : '') +
@@ -646,6 +656,7 @@
       var mo = M.k === 'monthly';
       h = '<h2>' + (mo ? 'Contrôle mensuel fait' : 'Contrôle annuel terminé') + '</h2><div class="muted">' + esc(M.site) + '</div>' +
         '<label class="lab" for="m-nom">Votre nom</label><input class="in" id="m-nom" maxlength="60" autocomplete="name" value="' + esc(S.nom || S.me.nom) + '">' +
+        (mo ? '' : (function () { var ns = empOf(M.site).filter(function (x) { return x.res === SIG; }).length; return ns ? '<p style="margin:10px 0 0;font-size:16px"><b>' + plural(ns, 'appareil signalé', 'appareils signalés') + '</b> par le niveau 1 à acquitter (bouton vert dans Zones).</p>' : ''; })()) +
         (mo ? '' : '<label class="lab" for="m-date">Date du contrôle</label><input class="in" type="date" id="m-date" value="' + today() + '" max="' + today() + '">') +
         '<label class="lab" for="m-com">Commentaire</label><textarea class="in" id="m-com" rows="3" maxlength="300" placeholder="Facultatif"></textarea><div class="err" id="m-err" role="alert"></div>' +
         '<button class="btn" data-act="mago">Valider</button><button class="btn sec" data-act="close">Annuler</button>';
@@ -670,7 +681,7 @@
     el.hidden = false;
   }
   function opName(op) {
-    var n = { controle: 'Contrôle', commentaire: 'Commentaire', creation: 'Création', remplacement: 'Remplacement', zone: 'Changement de zone', resolution: 'Acquittement', modifier: 'Modification de fiche', zoneok: 'OK de zone', mensuel: 'Contrôle mensuel', annuel: 'Contrôle annuel', telcreation: 'Nouvelle télécommande', telremp: 'Remplacement de télécommande' }[op.type] || op.type;
+    var n = { controle: 'Contrôle', commentaire: 'Commentaire', creation: 'Création', remplacement: 'Remplacement', zone: 'Changement de zone', resolution: 'Acquittement', annulsig: 'Annulation de signalement', modifier: 'Modification de fiche', zoneok: 'OK de zone', mensuel: 'Contrôle mensuel', annuel: 'Contrôle annuel', telcreation: 'Nouvelle télécommande', telremp: 'Remplacement de télécommande' }[op.type] || op.type;
     var e = op.eid && S.server && S.server.emp.filter(function (x) { return x.id === op.eid; })[0];
     return n + ' ' + (op.ref || (e && (e.ref || e.qr)) || op.nom || op.site || '') + ' (' + fmtDate(iso(op.ts)) + ')';
   }
@@ -706,7 +717,7 @@
       if (!toks.length) { SIGMSG = 'Saisissez au moins un numéro.'; return render(); }
       toks.forEach(function (t) {
         var e = list.filter(function (x) { return String(x.ref).toLowerCase() === t.toLowerCase(); })[0];
-        if (!e) unk.push(t); else if (isDef(e)) dup.push(e.ref); else { enqueue({ type: 'controle', eid: e.id, result: BAD }); n++; }
+        if (!e) unk.push(t); else if (isDef(e)) dup.push(e.ref); else { enqueue({ type: 'controle', eid: e.id, result: SIG }); n++; }
       });
       SIGTXT = unk.join(', ');
       var m = [];
@@ -723,7 +734,8 @@
     fzone: function (el) { F.zone = el.value; render(); },
     fetat: function (el) { F.etat = el.value; render(); },
     emp: function (el) { openModal({ k: isN1() ? 'sigone' : 'ctl', id: el.getAttribute('data-v') }); },
-    sigok: function (el) { var e = view().byId[el.getAttribute('data-v')]; if (!e) return closeModal(); var label = nom(e); closeModal(); enqueue({ type: 'controle', eid: e.id, result: BAD }); toast('Signalé en défaut : ' + label); },
+    annsig: function (el) { var e = view().byId[el.getAttribute('data-v')]; if (!e) return closeModal(); var label = nom(e); closeModal(); enqueue({ type: 'annulsig', eid: e.id }); toast('Signalement annulé : ' + label); },
+    sigok: function (el) { var e = view().byId[el.getAttribute('data-v')]; if (!e) return closeModal(); var label = nom(e); closeModal(); enqueue({ type: 'controle', eid: e.id, result: SIG }); toast('Signalé en défaut : ' + label); },
     close: function () { closeModal(); },
     maint: function (el) { openModal({ k: isN1() ? 'sigone' : 'maint', id: el.getAttribute('data-v') }); },
     ack: function (el) { openModal({ k: 'ack', id: el.getAttribute('data-v') }); },

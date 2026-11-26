@@ -2,7 +2,7 @@
   --bg: #f2f5f3; --surface: #ffffff; --ink: #14221c; --muted: #5c6d65; --line: #d5ded9;
   --brand: #0f3d2e; --brand-ink: #ffffff;
   --ok: #15803d; --ok-bg: #dcf3e3; --bad: #b91c1c; --bad-bg: #fde2e2; --warn: #9a5b00; --warn-bg: #fdecc8;
-  --none: #4b5a53; --none-bg: #e4eae7;
+  --none: #4b5a53; --none-bg: #e4eae7; --sig: #9a3412; --sig-bg: #ffe1c2;
   --f: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   --mono: ui-monospace, Menlo, Consolas, monospace;
 }
@@ -10,7 +10,7 @@
   :root {
     --bg: #0d1713; --surface: #16231d; --ink: #e8f0ec; --muted: #93a79d; --line: #2a3b33;
     --brand: #1f6b50; --ok: #6ee79a; --ok-bg: #123322; --bad: #fca5a5; --bad-bg: #3a1717;
-    --warn: #fcd27a; --warn-bg: #3a2b0c; --none: #b6c7be; --none-bg: #22322a;
+    --warn: #fcd27a; --warn-bg: #3a2b0c; --sig: #fdba74; --sig-bg: #4a2508; --none: #b6c7be; --none-bg: #22322a;
     color-scheme: dark;
   }
 }
@@ -151,3 +151,9 @@ th { background: var(--none-bg); }
   .rep tr { break-inside: avoid; }
   .rep thead { display: table-header-group; }
 }
+
+.pill.sig { background: var(--sig-bg); color: var(--sig); border: 1px dashed var(--sig); }
+.item.sigc { background: var(--sig-bg); }
+tr.sigc td { background: var(--sig-bg); }
+.tile.sig { background: var(--sig-bg); border-color: var(--sig); border-style: dashed; }
+.tile.sig .td { color: var(--sig); }
