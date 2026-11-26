@@ -5,7 +5,7 @@
   var API = CFG.API || '';
   var MONTH = CFG.MONTHLY_DAYS || 30, YEAR = CFG.ANNUAL_DAYS || 365;
   var KEY = 'cqr.v1', SCHEMA = 2;
-  var VERSION = 'v20 (alerte serveur ancien)';
+  var VERSION = 'v21 (ajout depuis la zone)';
   var OKR = 'OK', BAD = 'À remplacer', SIG = 'Signalé en défaut';
   var DEFECTS = ['À remplacer', 'Batterie à changer', 'Défaut alimentation', 'Défaut télécommande', 'Signalé en défaut'];
   var DEFKEY = { BAD: 'À remplacer', BATT: 'Batterie à changer', ALIM: 'Défaut alimentation', TEL: 'Défaut télécommande' };
@@ -384,6 +384,7 @@
       '<div class="stats"><div class="stat"><b>' + l.length + '</b><span>Blocs</span></div><div class="stat"><b style="color:var(--ok)">' + ok + '</b><span>OK</span></div>' +
       '<div class="stat"><b style="color:var(--bad)">' + bad + '</b><span>Non conformes</span></div><div class="stat"><b>' + none + '</b><span>À contrôler</span></div></div>' +
       (isN1() ? '<p class="muted" style="margin:0 2px 8px">Touchez ⚠ ou le numéro d’un appareil pour le signaler en défaut.</p>' : '<button class="btn ok" data-act="zoneok" data-v="' + esc(ZN.zone) + '"' + (todo ? '' : ' disabled') + '>OK pour toute la zone' + (bad ? ' (sauf ' + bad + ' non conforme' + (bad > 1 ? 's' : '') + ')' : '') + '</button>') +
+      (isN1() ? '' : '<button class="btn sm sec" data-act="newzone" style="margin:10px 0 0">+ Ajouter un bloc dans cette zone</button>') +
       '<div class="tiles">' + l.map(function (e) {
         var c = e.res === SIG ? 'sig' : (isDef(e) ? 'bad' : (e.dc ? 'ok' : 'none'));
         return '<div class="tile ' + c + '" role="button" tabindex="0" data-act="emp" data-v="' + esc(e.id) + '" title="' + esc(isDef(e) ? e.res : (e.dc ? 'OK' : 'À contrôler')) + '"><div class="tn"><b class="q">' + esc(nom(e)) + '</b>' + (isDef(e) ? '<small class="td">' + esc(e.res === SIG ? 'Signalé, à qualifier' : e.res) + '</small>' : '') + '</div>' +
@@ -590,9 +591,9 @@
       '<div class="row2"><div><label class="lab" for="m-bat">Bâtiment</label><input class="in" id="m-bat" maxlength="60" value="' + esc(bat) + '"></div>' +
       '<div><label class="lab" for="m-etage">Étage</label><input class="in" id="m-etage" maxlength="20" value="' + esc(etage) + '"></div></div>' +
       '<label class="lab" for="m-ref">Réf bloc</label><input class="in" id="m-ref" maxlength="60" value="' + esc(e ? e.ref : '') + '" placeholder="Ex. B12">' +
-      '<label class="lab" for="m-mat">Type de matériel</label><input class="in" id="m-mat" list="types" maxlength="60" value="' + esc(e ? e.type : (st.mat || '')) + '"><datalist id="types">' + typesAll().map(function (t) { return '<option value="' + esc(t) + '">'; }).join('') + '</datalist>' +
+      '<label class="lab" for="m-mat">Type de matériel</label><input class="in" id="m-mat" list="types" maxlength="60" value="' + esc(e ? e.type : (M.mat || st.mat || '')) + '"><datalist id="types">' + typesAll().map(function (t) { return '<option value="' + esc(t) + '">'; }).join('') + '</datalist>' +
       '<label class="lab" for="m-lc">Commentaire de lieu</label><input class="in" id="m-lc" maxlength="300" value="' + esc(e ? e.lc : '') + '" placeholder="Ex. hall, couloir nord…">' +
-      '<div id="m-sz">' + szFields(site, e ? e.zone : (st.zone || ''), e ? e.tel : '') + '</div>';
+      '<div id="m-sz">' + szFields(site, e ? e.zone : (M.zone !== undefined ? M.zone : (st.zone || '')), e ? e.tel : (M.tel || '')) + '</div>';
   }
 
   function renderModal(force) {
@@ -754,6 +755,12 @@
     telsel: function (el) { var n = $('#m-tel-new'); if (n) { n.hidden = el.value !== '__new'; if (!n.hidden) n.focus(); } },
     msite: function (el) {   // le site change : zones et télécommandes proposées changent aussi
       var box = $('#m-sz'); if (box) box.innerHTML = szFields(el.value, '', '');
+    },
+    newzone: function () {
+      var l = empOf(ZN.site).filter(function (e) { return e.zone === ZN.zone; });
+      function top(k, pref) { var c = {}, best = '', n = 0; l.forEach(function (e) { var v = e[k]; if (!v) return; c[v] = (c[v] || 0) + (pref && pref(e) ? 2 : 1); if (c[v] > n) { n = c[v]; best = v; } }); return best; }
+      var inB = function (e) { return e.bat === ZN.bat; };
+      openModal({ k: 'new', site: ZN.site, bat: ZN.bat || top('bat'), etage: top('etage', inB), zone: ZN.zone, tel: top('tel', inB), mat: top('type', inB) });
     },
     newbloc: function () { openModal({ k: 'new' }); },
     newin: function (el) { openModal({ k: 'new', site: curSite(), bat: el.getAttribute('data-bat'), etage: el.getAttribute('data-etage') }); },
