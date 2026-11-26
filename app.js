@@ -5,7 +5,7 @@
   var API = CFG.API || '';
   var MONTH = CFG.MONTHLY_DAYS || 30, YEAR = CFG.ANNUAL_DAYS || 365;
   var KEY = 'cqr.v1', SCHEMA = 2;
-  var VERSION = 'v19 (signalement annulable)';
+  var VERSION = 'v20 (alerte serveur ancien)';
   var OKR = 'OK', BAD = 'À remplacer', SIG = 'Signalé en défaut';
   var DEFECTS = ['À remplacer', 'Batterie à changer', 'Défaut alimentation', 'Défaut télécommande', 'Signalé en défaut'];
   var DEFKEY = { BAD: 'À remplacer', BATT: 'Batterie à changer', ALIM: 'Défaut alimentation', TEL: 'Défaut télécommande' };
@@ -180,7 +180,7 @@
         else if (!x.ok) S.rejected.push({ op: op, error: x.error, at: Date.now(), name: opName(op) });
       });
       var before = sig();
-      S.outbox = keep; S.server = r.data; S.me = r.me; S.last = r.now; VIEW = null; save();
+      S.outbox = keep; S.srv = r.ver || 0; S.server = r.data; S.me = r.me; S.last = r.now; VIEW = null; save();
       if (sig() !== before || !$('#view').innerHTML) render(); else renderHeader();   // pas de redessin inutile : un appui en cours ne se perd pas
       if (S.outbox.length) scheduleSync(500);
       else if (manual) toast('Synchronisé');
@@ -249,6 +249,7 @@
   }
   function banners() {
     var h = '';
+    if (S.me && (S.srv || 0) < 19) h += '<div class="banner"><b>Le serveur Apps Script n’est pas à jour.</b> Certaines fonctions (signalement niveau 1…) se comportent comme avant. Collez le nouveau code (Code_a_copier.txt) puis « Déployer » → « Gérer les déploiements » → crayon → « Nouvelle version » → « Déployer ».</div>';
     if (S.rejected.length) h += '<div class="banner">' + plural(S.rejected.length, 'opération refusée', 'opérations refusées') + ' par le serveur. <button class="ghost" data-act="rej">Voir</button></div>';
     return h;
   }
